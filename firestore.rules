@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Students collection for B.Tech CSE Section A
+    match /students/{studentId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+    }
+
+    // Attendance collection
+    match /attendance/{attendanceId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+    }
+  }
+}

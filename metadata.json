@@ -1,0 +1,6 @@
+{
+  "name": "SGI Attendance",
+  "description": "College attendance management app for Sobhasaria Group of Institutions, Sikar (B.Tech CSE - Section A).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
