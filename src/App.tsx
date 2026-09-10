@@ -11,6 +11,7 @@ import { StudentManagementScreen } from './screens/StudentManagementScreen';
 import { AttendanceHistoryScreen } from './screens/AttendanceHistoryScreen';
 import { WeeklyReportScreen } from './screens/WeeklyReportScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
+import { NewTeacherScreen } from './screens/NewTeacherScreen';
 import { toDateString } from './services/attendanceService';
 
 const MainApp: React.FC = () => {
@@ -83,6 +84,12 @@ const MainApp: React.FC = () => {
         {currentScreen === 'weekly-report' && (
           <WeeklyReportScreen
             onBack={() => setCurrentScreen('dashboard')}
+          />
+        )}
+
+        {currentScreen === 'new-teacher' && (
+          <NewTeacherScreen
+            onBack={() => setCurrentScreen('settings')}
           />
         )}
 

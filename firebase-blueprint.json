@@ -7,7 +7,9 @@
       "properties": {
         "rollNumber": { "type": "string", "description": "Student class roll number (e.g. 01, 02)" },
         "name": { "type": "string", "description": "Student full name" },
-        "enrollmentNumber": { "type": "string", "description": "College enrollment number" },
+        "fatherName": { "type": "string", "description": "Father's name" },
+        "mobileNumber": { "type": "string", "description": "Student or parent contact mobile number" },
+        "enrollmentNumber": { "type": "string", "description": "Optional college enrollment number" },
         "class": { "type": "string", "description": "Degree program" },
         "branch": { "type": "string", "description": "Engineering branch" },
         "semester": { "type": "string", "description": "Academic semester" },
@@ -16,7 +18,7 @@
         "createdAt": { "type": "string", "description": "Record creation timestamp" },
         "updatedAt": { "type": "string", "description": "Record update timestamp" }
       },
-      "required": ["rollNumber", "name", "enrollmentNumber", "active"]
+      "required": ["rollNumber", "name", "active"]
     },
     "attendance": {
       "title": "Attendance",

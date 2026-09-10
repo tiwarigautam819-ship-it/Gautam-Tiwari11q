@@ -8,6 +8,7 @@ import {
   Edit3,
   RefreshCw,
   Search,
+  Download,
 } from 'lucide-react';
 import { DayAttendanceSummary, ScreenType, Student, AttendanceStatus } from '../types';
 import {
@@ -18,6 +19,7 @@ import {
   saveAttendanceForDate,
 } from '../services/attendanceService';
 import { getStudents } from '../services/studentService';
+import { exportDayWiseCSV } from '../utils/csvExport';
 
 interface AttendanceHistoryScreenProps {
   onBack: () => void;
@@ -120,6 +122,16 @@ export const AttendanceHistoryScreen: React.FC<AttendanceHistoryScreenProps> = (
     }
   };
 
+  const handleExportSelectedDay = async () => {
+    if (!selectedDate || activeStudents.length === 0) return;
+    try {
+      const att = await getAttendanceForDate(selectedDate);
+      exportDayWiseCSV(selectedDate, activeStudents, att);
+    } catch (err) {
+      console.error('Export error:', err);
+    }
+  };
+
   return (
     <div className="space-y-4 pb-24 max-w-4xl mx-auto">
       {/* Header Matching Screenshot 6 */}
@@ -136,13 +148,25 @@ export const AttendanceHistoryScreen: React.FC<AttendanceHistoryScreenProps> = (
             Attendance History
           </h1>
         </div>
-        <button
-          onClick={loadHistory}
-          title="Reload"
-          className="p-2 rounded-full text-slate-500 hover:bg-slate-100"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            onClick={handleExportSelectedDay}
+            title="Export Selected Date to Excel CSV"
+            className="py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Export Day CSV</span>
+            <span className="sm:hidden">CSV</span>
+          </button>
+          <button
+            onClick={loadHistory}
+            title="Reload"
+            className="p-2 rounded-full text-slate-500 hover:bg-slate-100"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </div>
 
       {/* Select Date Bar Matching Screenshot 6 */}

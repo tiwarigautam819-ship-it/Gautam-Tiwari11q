@@ -10,7 +10,7 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, isAdmin } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
 
@@ -23,7 +23,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => 
             <button
               id="header-menu-toggle-btn"
               onClick={() => setMenuOpen(!menuOpen)}
-              className="p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors focus:outline-hidden"
+              className="p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors focus:outline-hidden cursor-pointer"
               aria-label="Toggle navigation menu"
             >
               <Menu className="w-5 h-5" />
@@ -32,7 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => 
             <button
               id="header-brand-logo-btn"
               onClick={() => onNavigate('dashboard')}
-              className="flex items-center space-x-2.5 focus:outline-hidden text-left"
+              className="flex items-center space-x-2.5 focus:outline-hidden text-left cursor-pointer"
             >
               <CollegeEmblem size="sm" className="w-7 h-7" />
               <div className="flex flex-col">
@@ -46,12 +46,12 @@ export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => 
             </button>
           </div>
 
-          {/* Right: Notification Bell & Teacher Profile */}
+          {/* Right: Notifications, Profile */}
           <div className="flex items-center space-x-2">
             <button
               id="header-bell-btn"
               onClick={() => setShowNotification(!showNotification)}
-              className="relative p-2 rounded-full text-slate-600 hover:bg-slate-100 transition-colors focus:outline-hidden"
+              className="relative p-2 rounded-full text-slate-600 hover:bg-slate-100 transition-colors focus:outline-hidden cursor-pointer"
               aria-label="View notifications"
             >
               <Bell className="w-5 h-5" />
@@ -59,15 +59,21 @@ export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => 
             </button>
 
             {user && (
-              <div className="hidden sm:flex items-center pl-2 border-l border-slate-200 space-x-2">
-                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center font-bold text-xs">
+              <div className="hidden md:flex items-center pl-2 border-l border-slate-200 space-x-2">
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
+                    isAdmin ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                  }`}
+                >
                   {user.email ? user.email.charAt(0).toUpperCase() : 'T'}
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-xs font-medium text-slate-800 truncate max-w-[120px]">
+                  <span className="text-xs font-medium text-slate-800 truncate max-w-[130px]">
                     {user.email?.split('@')[0] || 'Teacher'}
                   </span>
-                  <span className="text-[10px] text-slate-500">Instructor</span>
+                  <span className="text-[10px] font-semibold text-slate-500">
+                    {isAdmin ? 'Administrator' : 'Faculty'}
+                  </span>
                 </div>
               </div>
             )}
@@ -83,7 +89,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => 
               </span>
               <button
                 onClick={() => setShowNotification(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -120,7 +126,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => 
               </div>
               <button
                 onClick={() => setMenuOpen(false)}
-                className="p-1 rounded-md text-white/80 hover:text-white hover:bg-white/10"
+                className="p-1 rounded-md text-white/80 hover:text-white hover:bg-white/10 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -139,7 +145,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => 
                   onNavigate('dashboard');
                   setMenuOpen(false);
                 }}
-                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 ${
+                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 cursor-pointer ${
                   currentScreen === 'dashboard'
                     ? 'bg-blue-50 text-blue-700 font-semibold'
                     : 'text-slate-700 hover:bg-slate-100'
@@ -152,7 +158,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => 
                   onNavigate('mark-attendance');
                   setMenuOpen(false);
                 }}
-                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 ${
+                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 cursor-pointer ${
                   currentScreen === 'mark-attendance'
                     ? 'bg-blue-50 text-blue-700 font-semibold'
                     : 'text-slate-700 hover:bg-slate-100'
@@ -165,7 +171,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => 
                   onNavigate('students');
                   setMenuOpen(false);
                 }}
-                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 ${
+                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 cursor-pointer ${
                   currentScreen === 'students'
                     ? 'bg-blue-50 text-blue-700 font-semibold'
                     : 'text-slate-700 hover:bg-slate-100'
@@ -178,7 +184,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => 
                   onNavigate('history');
                   setMenuOpen(false);
                 }}
-                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 ${
+                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 cursor-pointer ${
                   currentScreen === 'history'
                     ? 'bg-blue-50 text-blue-700 font-semibold'
                     : 'text-slate-700 hover:bg-slate-100'
@@ -191,7 +197,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => 
                   onNavigate('weekly-report');
                   setMenuOpen(false);
                 }}
-                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 ${
+                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 cursor-pointer ${
                   currentScreen === 'weekly-report'
                     ? 'bg-blue-50 text-blue-700 font-semibold'
                     : 'text-slate-700 hover:bg-slate-100'
@@ -199,29 +205,31 @@ export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => 
               >
                 Weekly Report
               </button>
+
               <button
                 onClick={() => {
                   onNavigate('settings');
                   setMenuOpen(false);
                 }}
-                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 ${
+                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 cursor-pointer ${
                   currentScreen === 'settings'
                     ? 'bg-blue-50 text-blue-700 font-semibold'
                     : 'text-slate-700 hover:bg-slate-100'
                 }`}
               >
-                Settings / Admin
+                Settings / Firebase
               </button>
             </div>
 
             {/* Bottom Drawer Logout */}
             <div className="p-4 border-t border-slate-200">
               <button
+                id="drawer-logout-btn"
                 onClick={async () => {
                   setMenuOpen(false);
                   await logout();
                 }}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 text-sm font-semibold transition-colors"
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 text-sm font-semibold transition-colors cursor-pointer"
               >
                 <LogOut className="w-4 h-4" /> Sign Out
               </button>
@@ -232,3 +240,4 @@ export const Navbar: React.FC<NavbarProps> = ({ currentScreen, onNavigate }) => 
     </>
   );
 };
+

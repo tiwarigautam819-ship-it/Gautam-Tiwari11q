@@ -1,6 +1,12 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
-import { getFirestore, Firestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  Firestore,
+  doc,
+  getDocFromServer,
+} from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { FirestoreErrorInfo, OperationType } from '../types';
 
@@ -18,13 +24,16 @@ let dbInstance: Firestore | null = null;
 if (isFirebaseConfigured) {
   try {
     app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
-    const firestoreDbId =
-      firebaseConfig.firestoreDatabaseId &&
-      firebaseConfig.firestoreDatabaseId !== '(default)' &&
-      firebaseConfig.firestoreDatabaseId.trim() !== ''
-        ? firebaseConfig.firestoreDatabaseId
-        : undefined;
-    dbInstance = firestoreDbId ? getFirestore(app, firestoreDbId) : getFirestore(app);
+    const dbId = firebaseConfig.firestoreDatabaseId || '(default)';
+    try {
+      dbInstance = initializeFirestore(
+        app,
+        { experimentalAutoDetectLongPolling: true },
+        dbId
+      );
+    } catch {
+      dbInstance = getFirestore(app, dbId);
+    }
     authInstance = getAuth(app);
   } catch (err) {
     console.error('Error initializing Firebase:', err);
@@ -33,6 +42,21 @@ if (isFirebaseConfigured) {
 
 export const db = dbInstance as Firestore;
 export const auth = authInstance as Auth;
+
+export let isFirestoreOnline = false;
+
+export function isOfflineError(error: unknown): boolean {
+  if (!error) return false;
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    msg.includes('offline') ||
+    msg.includes('unavailable') ||
+    msg.includes('failed-precondition') ||
+    msg.includes('not-found') ||
+    msg.includes('5 NOT_FOUND') ||
+    msg.includes('Network Error')
+  );
+}
 
 export function handleFirestoreError(
   error: unknown,
@@ -65,17 +89,20 @@ async function testConnection() {
   if (!db) return;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
+    isFirestoreOnline = true;
   } catch (error) {
+    isFirestoreOnline = false;
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Firebase connection offline:', error.message);
+      // Diagnostic warning: client is offline or database is not yet provisioned in Firebase console
+      console.warn('Firebase connection notice: client is offline or cloud database is not yet provisioned. The app will use local storage persistence seamlessly.');
     }
   }
 }
 
 if (isFirebaseConfigured && db) {
   testConnection().catch((err) => {
-    // connection test failure log
     console.warn('Initial Firebase ping notice (harmless if rules deny test doc):', err?.message);
   });
 }
+
 

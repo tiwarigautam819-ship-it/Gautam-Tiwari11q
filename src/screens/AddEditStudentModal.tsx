@@ -3,7 +3,8 @@ import {
   X,
   ListOrdered,
   User,
-  CreditCard,
+  UserCheck,
+  Phone,
   GraduationCap,
   Cpu,
   Calendar,
@@ -18,7 +19,7 @@ interface AddEditStudentModalProps {
   onSave: (studentData: Omit<Student, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   studentToEdit?: Student | null;
   existingRollNumbers: string[];
-  existingEnrollments: string[];
+  existingEnrollments?: string[];
 }
 
 export const AddEditStudentModal: React.FC<AddEditStudentModalProps> = ({
@@ -27,11 +28,11 @@ export const AddEditStudentModal: React.FC<AddEditStudentModalProps> = ({
   onSave,
   studentToEdit,
   existingRollNumbers,
-  existingEnrollments,
 }) => {
   const [rollNumber, setRollNumber] = useState('');
   const [name, setName] = useState('');
-  const [enrollmentNumber, setEnrollmentNumber] = useState('');
+  const [fatherName, setFatherName] = useState('');
+  const [mobileNumber, setMobileNumber] = useState('');
   const [semester, setSemester] = useState('1st Semester');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -40,7 +41,8 @@ export const AddEditStudentModal: React.FC<AddEditStudentModalProps> = ({
     if (studentToEdit) {
       setRollNumber(studentToEdit.rollNumber);
       setName(studentToEdit.name);
-      setEnrollmentNumber(studentToEdit.enrollmentNumber);
+      setFatherName(studentToEdit.fatherName || '');
+      setMobileNumber(studentToEdit.mobileNumber || '');
       setSemester(studentToEdit.semester || '1st Semester');
     } else {
       // Suggest next roll number
@@ -52,7 +54,8 @@ export const AddEditStudentModal: React.FC<AddEditStudentModalProps> = ({
 
       setRollNumber(formatted);
       setName('');
-      setEnrollmentNumber('');
+      setFatherName('');
+      setMobileNumber('');
       setSemester('1st Semester');
     }
     setError(null);
@@ -66,7 +69,8 @@ export const AddEditStudentModal: React.FC<AddEditStudentModalProps> = ({
 
     const cleanRoll = rollNumber.trim();
     const cleanName = name.trim();
-    const cleanEnroll = enrollmentNumber.trim().toUpperCase();
+    const cleanFather = fatherName.trim();
+    const cleanMobile = mobileNumber.trim();
 
     if (!cleanRoll) {
       setError('Roll number is required.');
@@ -76,12 +80,23 @@ export const AddEditStudentModal: React.FC<AddEditStudentModalProps> = ({
       setError('Student name is required.');
       return;
     }
-    if (!cleanEnroll) {
-      setError('Enrollment number is required.');
+    if (!cleanFather) {
+      setError("Father's name is required.");
+      return;
+    }
+    if (!cleanMobile) {
+      setError('Mobile number is required.');
       return;
     }
 
-    // Check duplicates if adding new or if changed
+    // Check mobile number minimum length (10 digits standard)
+    const digitsOnly = cleanMobile.replace(/\D/g, '');
+    if (digitsOnly.length < 10) {
+      setError('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    // Check duplicates if adding new or if roll number changed
     if (
       (!studentToEdit || studentToEdit.rollNumber !== cleanRoll) &&
       existingRollNumbers.includes(cleanRoll)
@@ -90,20 +105,13 @@ export const AddEditStudentModal: React.FC<AddEditStudentModalProps> = ({
       return;
     }
 
-    if (
-      (!studentToEdit || studentToEdit.enrollmentNumber.toUpperCase() !== cleanEnroll) &&
-      existingEnrollments.includes(cleanEnroll)
-    ) {
-      setError(`Enrollment number "${cleanEnroll}" already exists.`);
-      return;
-    }
-
     setSaving(true);
     try {
       await onSave({
         rollNumber: cleanRoll,
         name: cleanName,
-        enrollmentNumber: cleanEnroll,
+        fatherName: cleanFather,
+        mobileNumber: cleanMobile,
         class: 'B.Tech',
         branch: 'Computer Science & Engineering',
         semester,
@@ -121,11 +129,16 @@ export const AddEditStudentModal: React.FC<AddEditStudentModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200">
-        {/* Modal Header Matching Screenshot 5 */}
+        {/* Modal Header */}
         <div className="p-4 sm:p-5 bg-white border-b border-slate-100 flex items-center justify-between">
-          <h2 className="text-base sm:text-lg font-bold text-slate-900">
-            {studentToEdit ? 'Edit Student' : 'Add Student'}
-          </h2>
+          <div>
+            <h2 className="text-base sm:text-lg font-bold text-slate-900">
+              {studentToEdit ? 'Edit Student' : 'Add New Student'}
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              B.Tech CSE – Section A
+            </p>
+          </div>
           <button
             onClick={onClose}
             className="p-1 rounded-full text-slate-400 hover:text-slate-700 transition-colors"
@@ -134,7 +147,7 @@ export const AddEditStudentModal: React.FC<AddEditStudentModalProps> = ({
           </button>
         </div>
 
-        {/* Modal Form Matching Screenshot 5 */}
+        {/* Modal Form */}
         <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-3.5 max-h-[80vh] overflow-y-auto">
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
@@ -157,7 +170,7 @@ export const AddEditStudentModal: React.FC<AddEditStudentModalProps> = ({
                 type="text"
                 value={rollNumber}
                 onChange={(e) => setRollNumber(e.target.value)}
-                placeholder="e.g. 09"
+                placeholder="e.g. 01"
                 required
                 className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 focus:border-transparent"
               />
@@ -185,23 +198,45 @@ export const AddEditStudentModal: React.FC<AddEditStudentModalProps> = ({
             </div>
           </div>
 
-          {/* Enrollment Number */}
+          {/* Father's Name */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Enrollment Number <span className="text-red-500">*</span>
+              Father's Name <span className="text-red-500">*</span>
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <CreditCard className="w-4 h-4" />
+                <UserCheck className="w-4 h-4" />
               </div>
               <input
-                id="student-enrollment-input"
+                id="student-father-name-input"
                 type="text"
-                value={enrollmentNumber}
-                onChange={(e) => setEnrollmentNumber(e.target.value)}
-                placeholder="e.g. 238TECH009"
+                value={fatherName}
+                onChange={(e) => setFatherName(e.target.value)}
+                placeholder="e.g. Shri Rajesh Sharma"
                 required
-                className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 uppercase focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          {/* Mobile Number */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Mobile Number <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <Phone className="w-4 h-4" />
+              </div>
+              <input
+                id="student-mobile-input"
+                type="tel"
+                value={mobileNumber}
+                onChange={(e) => setMobileNumber(e.target.value)}
+                placeholder="e.g. 9876543210"
+                maxLength={15}
+                required
+                className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 focus:border-transparent"
               />
             </div>
           </div>
@@ -287,7 +322,7 @@ export const AddEditStudentModal: React.FC<AddEditStudentModalProps> = ({
             </div>
           </div>
 
-          {/* Modal Action Buttons Matching Screenshot 5 */}
+          {/* Modal Action Buttons */}
           <div className="pt-4 flex items-center justify-end space-x-3 border-t border-slate-100">
             <button
               type="button"
@@ -306,7 +341,7 @@ export const AddEditStudentModal: React.FC<AddEditStudentModalProps> = ({
               {saving ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
-                'Save'
+                'Save Student'
               )}
             </button>
           </div>

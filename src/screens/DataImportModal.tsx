@@ -20,7 +20,9 @@ interface DataImportModalProps {
 interface ParsedRow {
   rollNumber: string;
   name: string;
-  enrollmentNumber: string;
+  fatherName?: string;
+  mobileNumber?: string;
+  enrollmentNumber?: string;
   semester?: string;
   isValid: boolean;
   error?: string;
@@ -41,17 +43,14 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
   if (!isOpen) return null;
 
   const existingRolls = new Set(existingStudents.map((s) => s.rollNumber.trim().toLowerCase()));
-  const existingEnrolls = new Set(
-    existingStudents.map((s) => s.enrollmentNumber.trim().toLowerCase())
-  );
 
   const downloadSampleCSV = () => {
     const csvContent =
       'data:text/csv;charset=utf-8,' +
-      'Roll Number,Student Name,Enrollment Number,Semester\n' +
-      '01,Rahul Sharma,238TECH001,1st Semester\n' +
-      '02,Aman Verma,238TECH002,1st Semester\n' +
-      '03,Priya Singh,238TECH003,1st Semester\n';
+      'Roll Number,Student Name,Father Name,Mobile Number,Semester\n' +
+      '01,Rahul Sharma,Shri R.P. Sharma,9876543210,1st Semester\n' +
+      '02,Aman Verma,Shri Suresh Verma,9812345678,1st Semester\n' +
+      '03,Priya Singh,Shri Mahendra Singh,9898765432,1st Semester\n';
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
@@ -96,20 +95,21 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
 
     // Map column indexes
     let rollIdx = headers.findIndex((h) => h.includes('roll'));
-    let nameIdx = headers.findIndex((h) => h.includes('name'));
+    let fatherIdx = headers.findIndex((h) => h.includes('father'));
+    let mobileIdx = headers.findIndex((h) => h.includes('mobile') || h.includes('phone') || h.includes('contact'));
+    let nameIdx = headers.findIndex((h) => (h.includes('name') || h.includes('student')) && !h.includes('father'));
     let enrollIdx = headers.findIndex((h) => h.includes('enroll'));
     let semIdx = headers.findIndex((h) => h.includes('sem'));
 
-    if (rollIdx === -1 || nameIdx === -1 || enrollIdx === -1) {
+    if (rollIdx === -1 || nameIdx === -1) {
       setGlobalError(
-        'Required columns missing! The CSV must contain "Roll Number", "Student Name", and "Enrollment Number".'
+        'Required columns missing! The CSV must at least contain "Roll Number" and "Student Name". (Father Name and Mobile Number are recommended).'
       );
       return;
     }
 
     const rows: ParsedRow[] = [];
     const seenRollsInFile = new Set<string>();
-    const seenEnrollsInFile = new Set<string>();
 
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -120,7 +120,9 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
 
       const rollNumber = cols[rollIdx] || '';
       const name = cols[nameIdx] || '';
-      const enrollmentNumber = cols[enrollIdx] || '';
+      const fatherName = fatherIdx !== -1 ? cols[fatherIdx] || '' : '';
+      const mobileNumber = mobileIdx !== -1 ? cols[mobileIdx] || '' : '';
+      const enrollmentNumber = enrollIdx !== -1 ? cols[enrollIdx] || '' : '';
       const semester = semIdx !== -1 && cols[semIdx] ? cols[semIdx] : '1st Semester';
 
       let error: string | undefined = undefined;
@@ -129,24 +131,19 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
         error = 'Missing roll number';
       } else if (!name) {
         error = 'Missing name';
-      } else if (!enrollmentNumber) {
-        error = 'Missing enrollment number';
       } else if (seenRollsInFile.has(rollNumber.toLowerCase())) {
         error = `Duplicate roll number in file (${rollNumber})`;
-      } else if (seenEnrollsInFile.has(enrollmentNumber.toLowerCase())) {
-        error = `Duplicate enrollment in file (${enrollmentNumber})`;
       } else if (existingRolls.has(rollNumber.toLowerCase())) {
         error = `Roll number "${rollNumber}" already exists in Section A`;
-      } else if (existingEnrolls.has(enrollmentNumber.toLowerCase())) {
-        error = `Enrollment "${enrollmentNumber}" already exists in Section A`;
       }
 
       seenRollsInFile.add(rollNumber.toLowerCase());
-      seenEnrollsInFile.add(enrollmentNumber.toLowerCase());
 
       rows.push({
         rollNumber,
         name,
+        fatherName,
+        mobileNumber,
         enrollmentNumber,
         semester,
         isValid: !error,
@@ -167,7 +164,9 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
       const toImport = validRows.map((r) => ({
         rollNumber: r.rollNumber,
         name: r.name,
-        enrollmentNumber: r.enrollmentNumber,
+        fatherName: r.fatherName || '',
+        mobileNumber: r.mobileNumber || '',
+        enrollmentNumber: r.enrollmentNumber || '',
         class: 'B.Tech',
         branch: 'Computer Science & Engineering',
         semester: r.semester || '1st Semester',
@@ -208,7 +207,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
           {/* Instructions and Download Template */}
           <div className="flex items-center justify-between p-3 bg-blue-50/70 border border-blue-200 rounded-xl text-xs">
             <div className="text-blue-900 pr-2">
-              <span className="font-bold">Required Columns:</span> Roll Number, Student Name, Enrollment Number
+              <span className="font-bold">Columns:</span> Roll Number, Student Name, Father Name, Mobile Number, Semester
             </div>
             <button
               onClick={downloadSampleCSV}
@@ -238,57 +237,58 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
               className="hidden"
             />
             <Upload className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-            <p className="text-xs sm:text-sm font-semibold text-slate-800">
-              {fileName ? fileName : 'Click to select or drag & drop CSV file'}
+            <p className="text-xs sm:text-sm font-bold text-slate-800">
+              {fileName ? fileName : 'Click to select CSV file from device'}
             </p>
             <p className="text-[11px] text-slate-500 mt-1">
-              Compatible with Microsoft Excel, Google Sheets, or plain CSV
+              Supports standard comma-separated, tab-separated, or Excel-exported CSV
             </p>
           </div>
 
-          {/* Preview Results */}
+          {/* Parsed Preview */}
           {parsedRows.length > 0 && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-800">Preview Parsed Data:</span>
+              <div className="flex items-center justify-between text-xs font-semibold">
+                <span className="text-slate-700">Preview Parsed Records:</span>
                 <div className="flex items-center space-x-3">
-                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                  <span className="text-emerald-700 flex items-center gap-1">
                     <CheckCircle2 className="w-3.5 h-3.5" /> {validRows.length} Valid
                   </span>
                   {invalidRows.length > 0 && (
-                    <span className="text-rose-700 font-semibold flex items-center gap-1">
-                      <AlertTriangle className="w-3.5 h-3.5" /> {invalidRows.length} Flagged
+                    <span className="text-rose-600 flex items-center gap-1">
+                      <AlertTriangle className="w-3.5 h-3.5" /> {invalidRows.length} Invalid
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* Table */}
-              <div className="border border-slate-200 rounded-xl overflow-hidden max-h-52 overflow-y-auto text-xs">
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-slate-100 text-slate-700 sticky top-0 font-semibold">
+              {/* Table preview */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden max-h-56 overflow-y-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-100 text-slate-700 font-semibold sticky top-0 border-b border-slate-200">
                     <tr>
-                      <th className="p-2 border-b">Roll</th>
-                      <th className="p-2 border-b">Name</th>
-                      <th className="p-2 border-b">Enrollment</th>
-                      <th className="p-2 border-b">Status</th>
+                      <th className="p-2">Roll</th>
+                      <th className="p-2">Name</th>
+                      <th className="p-2">Father Name</th>
+                      <th className="p-2">Mobile</th>
+                      <th className="p-2">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {parsedRows.map((row, idx) => (
-                      <tr
-                        key={idx}
-                        className={row.isValid ? 'bg-white' : 'bg-red-50/60 text-red-900'}
-                      >
-                        <td className="p-2 font-mono font-semibold">{row.rollNumber || '-'}</td>
-                        <td className="p-2 font-medium">{row.name || '-'}</td>
-                        <td className="p-2 font-mono text-[11px]">{row.enrollmentNumber || '-'}</td>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {parsedRows.map((r, idx) => (
+                      <tr key={idx} className={r.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/60 text-rose-900'}>
+                        <td className="p-2 font-mono font-bold text-slate-900">{r.rollNumber}</td>
+                        <td className="p-2">{r.name}</td>
+                        <td className="p-2 text-slate-600">{r.fatherName || '-'}</td>
+                        <td className="p-2 text-slate-600 font-mono">{r.mobileNumber || '-'}</td>
                         <td className="p-2">
-                          {row.isValid ? (
-                            <span className="text-emerald-600 font-bold">Ready</span>
+                          {r.isValid ? (
+                            <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Ready
+                            </span>
                           ) : (
-                            <span className="text-red-600 text-[11px] font-medium">
-                              {row.error}
+                            <span className="text-rose-600 font-semibold text-[11px]">
+                              {r.error}
                             </span>
                           )}
                         </td>
@@ -300,12 +300,12 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
             </div>
           )}
 
-          {/* Actions */}
-          <div className="pt-3 flex items-center justify-end space-x-3 border-t border-slate-100">
+          {/* Action buttons */}
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2.5">
             <button
               type="button"
               onClick={onClose}
-              className="py-2 px-4 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs sm:text-sm hover:bg-slate-50"
+              className="py-2.5 px-4 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-50"
             >
               Cancel
             </button>
@@ -313,12 +313,12 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
               type="button"
               onClick={handleConfirmImport}
               disabled={validRows.length === 0 || importing}
-              className="py-2.5 px-5 rounded-xl bg-blue-900 hover:bg-blue-950 text-white font-bold text-xs sm:text-sm shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="py-2.5 px-5 rounded-xl bg-blue-900 hover:bg-blue-950 text-white font-bold text-xs shadow-md disabled:opacity-50 flex items-center gap-2 cursor-pointer"
             >
               {importing ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
-                `Import ${validRows.length} Student${validRows.length === 1 ? '' : 's'}`
+                `Import ${validRows.length} Students`
               )}
             </button>
           </div>

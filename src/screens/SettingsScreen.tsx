@@ -12,6 +12,8 @@ import {
   Info,
   CheckCircle2,
   FileSpreadsheet,
+  UserPlus,
+  ShieldCheck,
 } from 'lucide-react';
 import { CollegeEmblem } from '../components/CollegeEmblem';
 import { useAuth } from '../context/AuthContext';
@@ -23,7 +25,7 @@ interface SettingsScreenProps {
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNavigate }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, isAdmin } = useAuth();
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [modalMessage, setModalMessage] = useState<string | null>(null);
 
@@ -191,7 +193,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
           onClick={() => {
             setActiveModal('auth-info');
             setModalMessage(
-              `Authenticated User:\nEmail: ${user?.email || 'N/A'}\nUID: ${user?.uid || 'N/A'}\nProvider: ${user?.providerData?.[0]?.providerId || 'firebase'}`
+              `Authenticated User:\nEmail: ${user?.email || 'N/A'}\nUID: ${user?.uid || 'N/A'}\nRole: ${isAdmin ? 'System Administrator' : 'Faculty Member'}`
             );
           }}
           className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
@@ -202,7 +204,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
             </div>
             <div>
               <p className="text-xs sm:text-sm font-bold text-slate-900">
-                Instructor Account Info
+                {isAdmin ? 'Administrator Credentials' : 'Instructor Account Info'}
               </p>
               <p className="text-[11px] text-slate-500">
                 {user?.email || 'Teacher Credentials'}
@@ -211,6 +213,35 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
           </div>
           <ChevronRight className="w-4 h-4 text-slate-400" />
         </button>
+
+        {/* Admin Only Option in Settings */}
+        {isAdmin && (
+          <button
+            id="settings-admin-new-teacher-btn"
+            onClick={() => onNavigate('new-teacher')}
+            className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
+          >
+            <div className="flex items-center space-x-3.5">
+              <div className="p-2 rounded-xl bg-purple-50 text-purple-700">
+                <UserPlus className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs sm:text-sm font-bold text-slate-900">
+                    Sign Up for New Teacher
+                  </p>
+                  <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider">
+                    Admin
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Provision new faculty login credentials
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          </button>
+        )}
 
         {/* Logout Matching Screenshot 8 */}
         <button
@@ -237,7 +268,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
           SGI Attendance v1.0.0
         </p>
         <p className="text-[10px] text-slate-400 mt-0.5">
-          Sobhasaria Group of Institutions, Sikar (CSE Section A)
+          © 2026 Gautam Tiwari from Nexora. All Rights Reserved.
         </p>
       </div>
 

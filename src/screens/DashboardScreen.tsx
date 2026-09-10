@@ -13,15 +13,17 @@ import {
   RefreshCw,
   PlusCircle,
   FileSpreadsheet,
+  Download,
 } from 'lucide-react';
 import { CollegeEmblem } from '../components/CollegeEmblem';
 import { ScreenType, Student, AttendanceStatus } from '../types';
 import { getStudents } from '../services/studentService';
 import {
   getAttendanceForDate,
-  formatFullDayDate,
+  formatDisplayDate,
   toDateString,
 } from '../services/attendanceService';
+import { ExportAttendanceModal } from './ExportAttendanceModal';
 
 interface DashboardScreenProps {
   onNavigate: (screen: ScreenType) => void;
@@ -39,6 +41,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -106,13 +109,13 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         </div>
       </div>
 
-      {/* Date Selector Pill */}
+      {/* Date Selector Pill without week day names */}
       <div className="relative">
         <div className="bg-white rounded-xl border border-slate-200 px-4 py-2.5 flex items-center justify-between shadow-2xs">
           <div className="flex items-center space-x-2.5 text-slate-700">
             <Calendar className="w-4 h-4 text-blue-600" />
             <span className="text-xs sm:text-sm font-semibold">
-              {formatFullDayDate(selectedDate)}
+              {formatDisplayDate(selectedDate)}
             </span>
           </div>
           <div className="flex items-center space-x-2">
@@ -125,6 +128,17 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               }}
               className="text-xs font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded-lg border border-blue-200 focus:outline-hidden cursor-pointer"
             />
+            <button
+              id="dashboard-export-csv-btn"
+              type="button"
+              onClick={() => setExportModalOpen(true)}
+              title="Export Attendance to Microsoft Excel CSV"
+              className="py-1 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Export CSV</span>
+              <span className="sm:hidden">Export</span>
+            </button>
             <button
               onClick={loadData}
               title="Refresh Firestore Data"
@@ -275,6 +289,19 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </div>
         </div>
       )}
+
+      {/* Export Attendance Modal */}
+      <ExportAttendanceModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        students={students}
+        defaultDate={selectedDate}
+      />
+
+      {/* Footer Copyright */}
+      <div className="text-center text-[11px] text-slate-400 font-medium pt-4 pb-2">
+        © 2026 Gautam Tiwari from Nexora. All Rights Reserved.
+      </div>
     </div>
   );
 };

@@ -16,6 +16,7 @@ import {
   toDateString,
   formatDisplayDate,
 } from '../services/attendanceService';
+import { downloadExcelCSV } from '../utils/csvExport';
 
 interface WeeklyReportScreenProps {
   onBack: () => void;
@@ -36,12 +37,12 @@ export const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({ onBack }
   const [weeklyData, setWeeklyData] = useState<WeeklyReportRow[]>([]);
   const [daysOfWeek, setDaysOfWeek] = useState<Array<{ name: string; dateStr: string; display: string }>>([]);
 
-  // Calculate Monday to Friday dates based on weekStartDate
+  // Calculate Monday to Saturday dates based on weekStartDate
   const computeWeekDays = (startStr: string) => {
     const [y, m, d] = startStr.split('-').map(Number);
     const start = new Date(y, m - 1, d);
 
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     return days.map((dayName, idx) => {
       const dayDate = new Date(start);
       dayDate.setDate(start.getDate() + idx);
@@ -91,7 +92,7 @@ export const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({ onBack }
           student: st,
           dayStatuses: statuses,
           totalPresent: present,
-          totalDays: 5,
+          totalDays: 6,
           percentage: pct,
         };
       });
@@ -108,7 +109,7 @@ export const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({ onBack }
     loadReport();
   }, [weekStartDate]);
 
-  const weekEndDate = daysOfWeek.length > 0 ? daysOfWeek[4].dateStr : '';
+  const weekEndDate = daysOfWeek.length > 0 ? daysOfWeek[daysOfWeek.length - 1].dateStr : '';
 
   const handlePrint = () => {
     window.print();
@@ -117,28 +118,35 @@ export const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({ onBack }
   const exportCSV = () => {
     if (weeklyData.length === 0) return;
 
-    const headers = ['Roll No', 'Student Name', 'Enrollment', ...daysOfWeek.map((d) => `${d.name} (${d.display})`), 'Total Present', 'Total Days', 'Attendance %'];
+    const headers = [
+      'Roll Number',
+      'Student Name',
+      "Father's Name",
+      'Mobile Number',
+      ...daysOfWeek.map((d) => `${d.name} (${d.display})`),
+      'Total Present',
+      'Total Days',
+      'Attendance %',
+    ];
     const rows = weeklyData.map((row) => [
       row.student.rollNumber,
-      `"${row.student.name}"`,
-      row.student.enrollmentNumber,
+      row.student.name,
+      row.student.fatherName || '',
+      row.student.mobileNumber || '',
       ...daysOfWeek.map((d) => {
         const s = row.dayStatuses[d.dateStr];
-        return s === 'Present' ? 'P' : s === 'Absent' ? 'A' : '-';
+        return s === 'Present' ? 'Present (P)' : s === 'Absent' ? 'Absent (A)' : 'Not Marked (-)';
       }),
       row.totalPresent,
       row.totalDays,
       `${row.percentage}%`,
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `SGI_Attendance_SectionA_Week_${weekStartDate}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadExcelCSV(
+      `SGI_Attendance_SectionA_Week_${weekStartDate}.csv`,
+      headers,
+      rows
+    );
   };
 
   return (
@@ -153,9 +161,14 @@ export const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({ onBack }
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-lg sm:text-xl font-bold text-slate-900">
-            Weekly Report
-          </h1>
+          <div>
+            <h1 className="text-lg sm:text-xl font-bold text-slate-900">
+              Weekly Report
+            </h1>
+            <p className="text-[11px] text-blue-700 font-semibold">
+              Monday to Saturday (6 Days)
+            </p>
+          </div>
         </div>
         <div className="flex items-center space-x-1.5">
           <button
@@ -181,8 +194,8 @@ export const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({ onBack }
           <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
           <span className="text-xs sm:text-sm font-bold text-slate-900">
             {daysOfWeek.length > 0
-              ? `${daysOfWeek[0].display} – ${daysOfWeek[4].display}`
-              : 'Weekly Range'}
+              ? `${daysOfWeek[0].display} – ${daysOfWeek[daysOfWeek.length - 1].display}`
+              : 'Weekly Range (Mon - Sat)'}
           </span>
         </div>
 

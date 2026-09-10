@@ -10,6 +10,8 @@ import {
   CheckCircle2,
   RefreshCw,
   GraduationCap,
+  Phone,
+  Download,
 } from 'lucide-react';
 import { Student } from '../types';
 import {
@@ -20,7 +22,7 @@ import {
   batchImportStudents,
 } from '../services/studentService';
 import { AddEditStudentModal } from './AddEditStudentModal';
-import { DataImportModal } from './DataImportModal';
+import { ExportAttendanceModal } from './ExportAttendanceModal';
 
 interface StudentManagementScreenProps {
   onBack: () => void;
@@ -36,7 +38,7 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
   // Modals state
   const [modalOpen, setModalOpen] = useState(false);
   const [studentToEdit, setStudentToEdit] = useState<Student | null>(null);
-  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -109,7 +111,9 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
     (s) =>
       s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.rollNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.enrollmentNumber.toLowerCase().includes(searchQuery.toLowerCase())
+      (s.fatherName && s.fatherName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (s.mobileNumber && s.mobileNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (s.enrollmentNumber && s.enrollmentNumber.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   return (
@@ -147,7 +151,7 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search by name, roll number, or enrollment..."
+          placeholder="Search by name, roll number, father's name, or mobile..."
           className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-600 focus:border-transparent shadow-2xs"
         />
       </div>
@@ -160,13 +164,13 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
 
         <div className="flex items-center gap-2">
           <button
-            id="import-csv-modal-btn"
+            id="export-csv-modal-btn"
             type="button"
-            onClick={() => setImportModalOpen(true)}
-            className="py-2 px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            onClick={() => setExportModalOpen(true)}
+            className="py-2 px-3 bg-white border border-emerald-200 hover:bg-emerald-50 text-emerald-800 font-semibold text-xs rounded-xl shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-blue-700" />
-            <span>Import CSV</span>
+            <Download className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Export CSV</span>
           </button>
 
           <button
@@ -221,10 +225,10 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
                 <Plus className="w-3.5 h-3.5" /> Add Student
               </button>
               <button
-                onClick={() => setImportModalOpen(true)}
-                className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50 flex items-center gap-1.5"
+                onClick={() => setExportModalOpen(true)}
+                className="px-4 py-2 bg-white border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold hover:bg-emerald-50 flex items-center gap-1.5 cursor-pointer"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-blue-700" /> Import CSV
+                <Download className="w-3.5 h-3.5 text-emerald-600" /> Export CSV
               </button>
             </div>
           </div>
@@ -248,12 +252,33 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
 
                 {/* Name and Subtitle */}
                 <div className="min-w-0">
-                  <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">
-                    {student.name}
-                  </p>
-                  <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                    Enroll. No: {student.enrollmentNumber} | CSE | {student.semester || 'Sem 1'}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">
+                      {student.name}
+                    </p>
+                    <span className="text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100 px-1.5 py-0.5 rounded">
+                      {student.semester || '1st Sem'}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-slate-500 mt-0.5">
+                    {student.fatherName && (
+                      <span className="truncate">
+                        <span className="text-slate-400">Father:</span> {student.fatherName}
+                      </span>
+                    )}
+                    {student.mobileNumber && (
+                      <a
+                        href={`tel:${student.mobileNumber}`}
+                        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        <Phone className="w-3 h-3 text-blue-500" />
+                        <span>{student.mobileNumber}</span>
+                      </a>
+                    )}
+                    {!student.fatherName && !student.mobileNumber && (
+                      <span className="text-slate-400">B.Tech CSE Section A</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -291,15 +316,13 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
         onSave={handleSaveStudent}
         studentToEdit={studentToEdit}
         existingRollNumbers={students.map((s) => s.rollNumber)}
-        existingEnrollments={students.map((s) => s.enrollmentNumber)}
       />
 
-      {/* CSV Import Modal */}
-      <DataImportModal
-        isOpen={importModalOpen}
-        onClose={() => setImportModalOpen(false)}
-        onImport={handleBatchImport}
-        existingStudents={students}
+      {/* CSV Export Modal */}
+      <ExportAttendanceModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        students={students}
       />
 
       {/* Delete Confirmation Modal */}

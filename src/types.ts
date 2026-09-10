@@ -2,7 +2,9 @@ export interface Student {
   id: string;
   rollNumber: string;
   name: string;
-  enrollmentNumber: string;
+  fatherName?: string;
+  mobileNumber?: string;
+  enrollmentNumber?: string;
   class: string; // 'B.Tech'
   branch: string; // 'Computer Science & Engineering'
   semester: string; // '1st Semester'
@@ -40,12 +42,22 @@ export interface WeeklyReportRow {
   percentage: number;
 }
 
+export interface Teacher {
+  uid: string;
+  name: string;
+  email: string;
+  role?: 'teacher' | 'admin';
+  createdAt: string;
+  createdBy?: string;
+}
+
 export type ScreenType =
   | 'dashboard'
   | 'mark-attendance'
   | 'students'
   | 'history'
   | 'weekly-report'
+  | 'new-teacher'
   | 'settings';
 
 export enum OperationType {

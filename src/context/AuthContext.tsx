@@ -4,19 +4,20 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
   signOut as fbSignOut,
 } from 'firebase/auth';
 import { auth, isFirebaseConfigured } from '../services/firebase';
+import { createTeacherAccountOnServer, CreateTeacherResponse } from '../services/teacherService';
+
+export const ADMIN_EMAIL = 'tiwarigautam819@gmail.com';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  isAdmin: boolean;
   isConfigured: boolean;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
-  registerWithEmail: (email: string, pass: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
+  createTeacher: (name: string, email: string, pass: string) => Promise<CreateTeacherResponse>;
   logout: () => Promise<void>;
   authError: string | null;
   clearAuthError: () => void;
@@ -35,6 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
       return;
     }
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
@@ -44,78 +46,95 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearAuthError = () => setAuthError(null);
 
+  const isAdmin = Boolean(
+    user && user.email && user.email.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase()
+  );
+
   const signInWithEmail = async (email: string, pass: string) => {
     setAuthError(null);
     if (!isFirebaseConfigured || !auth) {
-      setAuthError('Firebase is disconnected. Please provide your new Firebase project configuration.');
+      setAuthError('Firebase connection is not configured. Please check your project settings.');
       return;
     }
+
+    const cleanEmail = email.trim().toLowerCase();
+
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), pass);
+      await signInWithEmailAndPassword(auth, cleanEmail, pass);
     } catch (err: any) {
-      console.error('Email sign in error:', err);
+      console.warn('Sign-in attempt failed for:', cleanEmail, err.code);
+
+      // If this is the designated single Admin email and account does not exist in Firebase yet:
+      if (
+        cleanEmail === ADMIN_EMAIL.toLowerCase() &&
+        (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential')
+      ) {
+        try {
+          // Initialize/Bootstrap Admin in Firebase Auth with the entered password
+          await createUserWithEmailAndPassword(auth, cleanEmail, pass);
+          return;
+        } catch (createErr: any) {
+          if (createErr.code === 'auth/email-already-in-use') {
+            setAuthError('Invalid password for Administrator account. Please try again.');
+            throw err;
+          } else if (createErr.code === 'auth/weak-password') {
+            setAuthError('Admin password must be at least 6 characters.');
+            throw createErr;
+          }
+        }
+      }
+
       if (err.code === 'auth/operation-not-allowed') {
-        setAuthError('Email/Password provider is not yet activated in Firebase console.');
+        setAuthError('Email/Password sign-in provider is not enabled in Firebase Console.');
       } else if (
         err.code === 'auth/user-not-found' ||
         err.code === 'auth/wrong-password' ||
         err.code === 'auth/invalid-credential'
       ) {
-        setAuthError('Invalid email or password. If you do not have an account yet, click "Need a teacher login? Register here" below.');
+        if (cleanEmail === ADMIN_EMAIL.toLowerCase()) {
+          setAuthError('Invalid password for Administrator. Please check your password.');
+        } else {
+          setAuthError('Invalid email or password. Teacher accounts can only be created by the Administrator (tiwarigautam819@gmail.com).');
+        }
       } else {
-        setAuthError(err.message || 'Failed to sign in.');
+        setAuthError(err.message || 'Failed to sign in. Please verify your credentials.');
       }
       throw err;
     }
   };
 
-  const registerWithEmail = async (email: string, pass: string) => {
-    setAuthError(null);
-    if (!isFirebaseConfigured || !auth) {
-      setAuthError('Firebase is disconnected. Please provide your new Firebase project configuration.');
-      return;
+  /**
+   * Admin-only Teacher Creation.
+   * Invokes the server-side API which verifies the Admin's ID token and creates the account.
+   */
+  const createTeacher = async (name: string, email: string, pass: string): Promise<CreateTeacherResponse> => {
+    if (!user) {
+      throw new Error('You must be logged in to create a teacher account.');
     }
-    try {
-      await createUserWithEmailAndPassword(auth, email.trim(), pass);
-    } catch (err: any) {
-      console.error('Email register error:', err);
-      if (err.code === 'auth/operation-not-allowed') {
-        setAuthError('Email/Password provider is not activated in Firebase console.');
-      } else if (err.code === 'auth/email-already-in-use') {
-        setAuthError('An account with this email already exists. Please switch to "Already have an account? Log In" and sign in.');
-      } else if (err.code === 'auth/weak-password') {
-        setAuthError('Password should be at least 6 characters.');
-      } else {
-        setAuthError(err.message || 'Failed to create account.');
-      }
-      throw err;
-    }
-  };
 
-  const signInWithGoogle = async () => {
-    setAuthError(null);
-    if (!isFirebaseConfigured || !auth) {
-      setAuthError('Firebase is disconnected. Please provide your new Firebase project configuration.');
-      return;
+    if (!isAdmin) {
+      throw new Error('Access denied. Only the Administrator (tiwarigautam819@gmail.com) can create teacher accounts.');
     }
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (err: any) {
-      console.error('Google sign in error:', err);
-      if (err.code === 'auth/unauthorized-domain') {
-        setAuthError('Google Sign-In is blocked because this preview domain is not in Authorized Domains. Please use Email & Password above to login or register (no domain setup required).');
-      } else {
-        setAuthError(err.message || 'Failed to sign in with Google.');
-      }
-      throw err;
-    }
+
+    // Force refresh the token to pass a valid, unexpired token to the backend
+    const idToken = await user.getIdToken(true);
+    const result = await createTeacherAccountOnServer(idToken, {
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      password: pass,
+    });
+
+    return result;
   };
 
   const logout = async () => {
     setAuthError(null);
     if (auth) {
-      await fbSignOut(auth);
+      try {
+        await fbSignOut(auth);
+      } catch {
+        // ignore
+      }
     }
     setUser(null);
   };
@@ -125,10 +144,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         user,
         loading,
+        isAdmin,
         isConfigured: isFirebaseConfigured,
         signInWithEmail,
-        registerWithEmail,
-        signInWithGoogle,
+        createTeacher,
         logout,
         authError,
         clearAuthError,
@@ -146,3 +165,4 @@ export const useAuth = () => {
   }
   return context;
 };
+
