@@ -24,7 +24,7 @@ let dbInstance: Firestore | null = null;
 if (isFirebaseConfigured) {
   try {
     app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
-    const dbId = firebaseConfig.firestoreDatabaseId || '(default)';
+    const dbId = (firebaseConfig as any).firestoreDatabaseId || '(default)';
     try {
       dbInstance = initializeFirestore(
         app,
@@ -54,8 +54,31 @@ export function isOfflineError(error: unknown): boolean {
     msg.includes('failed-precondition') ||
     msg.includes('not-found') ||
     msg.includes('5 NOT_FOUND') ||
-    msg.includes('Network Error')
+    msg.includes('Network Error') ||
+    msg.includes('timed out') ||
+    msg.includes('timeout')
   );
+}
+
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number = 3000,
+  fallbackValue?: T
+): Promise<T> {
+  let timer: any;
+  const timeoutPromise = new Promise<T>((resolve, reject) => {
+    timer = setTimeout(() => {
+      if (fallbackValue !== undefined) {
+        resolve(fallbackValue);
+      } else {
+        reject(new Error(`Operation timed out after ${ms}ms`));
+      }
+    }, ms);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    clearTimeout(timer);
+  });
 }
 
 export function handleFirestoreError(

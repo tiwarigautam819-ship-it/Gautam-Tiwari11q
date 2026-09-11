@@ -39,6 +39,51 @@ export function downloadExcelCSV(
 }
 
 /**
+ * Generates formatted CSV string for Day-Wise Attendance.
+ */
+export function generateDayWiseCSVContent(
+  dateStr: string,
+  students: Student[],
+  attendance: Record<string, AttendanceStatus>
+): string {
+  const headers = [
+    'Roll Number',
+    'Student Name',
+    "Father's Name",
+    'Mobile Number',
+    'Date',
+    'Attendance Status',
+  ];
+
+  const escapeCell = (val: string | number | undefined | null): string => {
+    if (val === undefined || val === null) return '""';
+    const str = String(val).replace(/"/g, '""');
+    return `"${str}"`;
+  };
+
+  const sortedStudents = [...students].sort((a, b) =>
+    a.rollNumber.localeCompare(b.rollNumber, undefined, { numeric: true })
+  );
+
+  const rows = sortedStudents.map((st) => {
+    const status = attendance[st.id] || 'Not Marked';
+    return [
+      st.rollNumber,
+      st.name,
+      st.fatherName || '',
+      st.mobileNumber || '',
+      dateStr,
+      status,
+    ];
+  });
+
+  return [
+    headers.map(escapeCell).join(','),
+    ...rows.map((row) => row.map(escapeCell).join(',')),
+  ].join('\r\n');
+}
+
+/**
  * Exports Day-Wise Attendance into an Excel-compatible CSV file.
  */
 export function exportDayWiseCSV(

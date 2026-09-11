@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   School,
@@ -14,10 +14,13 @@ import {
   FileSpreadsheet,
   UserPlus,
   ShieldCheck,
+  Cloud,
+  Check,
 } from 'lucide-react';
 import { CollegeEmblem } from '../components/CollegeEmblem';
 import { useAuth } from '../context/AuthContext';
 import { ScreenType } from '../types';
+import { checkDriveConnectionStatus, signInWithGoogleDrive } from '../services/googleDriveService';
 
 interface SettingsScreenProps {
   onBack: () => void;
@@ -28,6 +31,37 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
   const { user, logout, isAdmin } = useAuth();
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [modalMessage, setModalMessage] = useState<string | null>(null);
+  const [driveConnected, setDriveConnected] = useState<boolean>(false);
+  const [driveAdminEmail, setDriveAdminEmail] = useState<string>('rk89experiment@gmail.com');
+  const [driveLoading, setDriveLoading] = useState<boolean>(false);
+  const [driveNotice, setDriveNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    checkDriveConnectionStatus().then((status) => {
+      setDriveConnected(status.connected);
+      if (status.adminEmail) setDriveAdminEmail(status.adminEmail);
+    });
+  }, []);
+
+  const handleConnectDrive = async () => {
+    setDriveLoading(true);
+    setDriveNotice(null);
+    try {
+      const res = await signInWithGoogleDrive();
+      if (res && res.accessToken) {
+        setDriveConnected(true);
+        setDriveNotice('Successfully authorized Google Drive! All attendance saves will now automatically upload to your Google Drive.');
+      } else {
+        setDriveNotice('Authorization completed. Drive token registered.');
+      }
+    } catch (err: any) {
+      if (err?.code !== 'auth/popup-closed-by-user') {
+        setDriveNotice(`Authorization error: ${err?.message || 'Could not connect'}`);
+      }
+    } finally {
+      setDriveLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -241,6 +275,63 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
             </div>
             <ChevronRight className="w-4 h-4 text-slate-400" />
           </button>
+        )}
+
+        {/* Google Drive Cloud Backup (Admin Only) */}
+        {isAdmin && (
+          <div className="w-full p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+            <div className="flex items-center space-x-3.5">
+              <div className={`p-2 rounded-xl ${driveConnected ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
+                <Cloud className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs sm:text-sm font-bold text-slate-900">
+                    Google Drive Cloud Backup
+                  </p>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider ${
+                    driveConnected ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {driveConnected ? 'Active' : 'Action Required'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  {driveConnected
+                    ? `Auto-syncing all attendance records to ${driveAdminEmail} ("Sobhasaria Attendance Records")`
+                    : `Needs 1-click authorization to upload attendance to ${driveAdminEmail}`}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              id="settings-connect-drive-btn"
+              onClick={handleConnectDrive}
+              disabled={driveLoading}
+              className={`px-3.5 py-2 rounded-xl font-semibold text-xs transition-all shrink-0 cursor-pointer shadow-2xs flex items-center justify-center gap-1.5 ${
+                driveConnected
+                  ? 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                  : 'bg-blue-700 hover:bg-blue-800 text-white'
+              }`}
+            >
+              {driveLoading ? (
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              ) : driveConnected ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Re-authorize</span>
+                </>
+              ) : (
+                <span>Authorize Google Drive</span>
+              )}
+            </button>
+          </div>
+        )}
+
+        {driveNotice && (
+          <div className="px-4 py-2.5 bg-blue-50/80 border-t border-blue-100 text-blue-900 text-xs flex items-center justify-between">
+            <span>{driveNotice}</span>
+            <button onClick={() => setDriveNotice(null)} className="text-blue-700 font-bold ml-2 cursor-pointer">Dismiss</button>
+          </div>
         )}
 
         {/* Logout Matching Screenshot 8 */}

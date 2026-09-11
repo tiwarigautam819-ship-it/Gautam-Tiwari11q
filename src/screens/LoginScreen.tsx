@@ -182,7 +182,7 @@ export const LoginScreen: React.FC = () => {
           </form>
 
           {/* Secure Administrative Notice */}
-          <div className="mt-5 pt-3.5 border-t border-slate-100 text-center">
+          <div className="mt-5 pt-3 border-t border-slate-100 text-center">
             <p className="text-[11px] text-slate-500 leading-relaxed">
               Teacher accounts are managed and provisioned by the Institution Administrator.
             </p>
