@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -6,6 +7,9 @@ import { createServer as createViteServer } from 'vite';
 
 const app = express();
 const PORT = 3000;
+
+// Enable CORS for Android APKs, PWAs, and external clients
+app.use(cors({ origin: true, credentials: true }));
 const ADMIN_EMAILS = [
   'tiwarigautam819@gmail.com',
   'rk89experiment@gmail.com',
@@ -368,6 +372,131 @@ app.post('/api/attendance', (req, res) => {
     date,
     count: Object.keys(currentForDate).length,
   });
+});
+
+// =============================================================
+// CSV EXPORT API (SHORT URLS FOR ANDROID APKS & BROWSER DOWNLOADS)
+// Prevents Android UI freeze/crash caused by large data URIs
+// Opens short direct link in browser to trigger native DownloadManager
+// =============================================================
+
+interface PreparedExport {
+  id: string;
+  filename: string;
+  content: string;
+  createdAt: number;
+}
+
+const preparedExports = new Map<string, PreparedExport>();
+
+// Clean up exports older than 2 hours periodically
+setInterval(() => {
+  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+  for (const [id, exp] of preparedExports.entries()) {
+    if (exp.createdAt < cutoff) {
+      preparedExports.delete(id);
+    }
+  }
+}, 10 * 60 * 1000);
+
+// Endpoint to prepare a short-link CSV export
+app.post('/api/export/prepare', (req, res) => {
+  try {
+    const { filename, content } = req.body;
+    if (!content || typeof content !== 'string') {
+      return res.status(400).json({ error: 'CSV content is required.' });
+    }
+
+    // Generate short 6-char id (e.g. "a9f2x1")
+    const id = Math.random().toString(36).substring(2, 8);
+    const rawFilename = (filename || 'attendance_report.csv').replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const finalFilename = rawFilename.toLowerCase().endsWith('.csv') ? rawFilename : `${rawFilename}.csv`;
+
+    preparedExports.set(id, {
+      id,
+      filename: finalFilename,
+      content,
+      createdAt: Date.now(),
+    });
+
+    // Determine the public URL dynamically from request, process.env.APP_URL, or headers
+    let host = req.get('host');
+    if (!host || host.includes('0.0.0.0') || host === 'localhost:3000') {
+      if (process.env.APP_URL) {
+        try {
+          host = new URL(process.env.APP_URL).host;
+        } catch {}
+      }
+    }
+    const protoHeader = req.headers['x-forwarded-proto'];
+    let protocol = typeof protoHeader === 'string' ? protoHeader : (host && host.includes('localhost') ? 'http' : 'https');
+    
+    // Relative path is always safe across any domain
+    const relativeUrl = `/api/export/file/${id}.csv`;
+    const downloadUrl = host ? `${protocol}://${host}${relativeUrl}` : relativeUrl;
+
+    return res.json({
+      success: true,
+      id,
+      downloadUrl,
+      relativeUrl,
+      filename: finalFilename,
+    });
+  } catch (err: any) {
+    console.error('Error preparing CSV export:', err);
+    return res.status(500).json({ error: 'Failed to prepare CSV download link.' });
+  }
+});
+
+// Endpoint to download the prepared CSV file directly in browser
+app.get(['/api/export/file/:fileParam', '/api/export/download/:fileParam'], (req, res) => {
+  const fileParam = req.params.fileParam || '';
+  const id = fileParam.replace(/\.csv$/i, '').trim();
+  const exp = preparedExports.get(id);
+
+  if (!exp) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.status(404).send(`
+      <!DOCTYPE html>
+      <html>
+      <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+      <body style="font-family:system-ui, sans-serif;padding:32px 16px;text-align:center;background:#f8fafc;color:#1e293b;">
+        <div style="max-width:400px;margin:0 auto;background:#fff;padding:24px;border-radius:16px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);border:1px solid #e2e8f0;">
+          <h3 style="color:#dc2626;margin-top:0;">Download Link Expired</h3>
+          <p style="color:#64748b;font-size:14px;line-height:1.5;">The temporary export link has expired. Please go back to the SGI Attendance app and tap "Download CSV" again.</p>
+        </div>
+      </body>
+      </html>
+    `);
+  }
+
+  const safeFilename = encodeURIComponent(exp.filename).replace(/['()]/g, escape);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${exp.filename}"; filename*=UTF-8''${safeFilename}`);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  // Excel UTF-8 BOM (\uFEFF)
+  const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+  const contentBuffer = Buffer.from(exp.content, 'utf8');
+  return res.send(Buffer.concat([bom, contentBuffer]));
+});
+
+// Direct student template CSV download
+app.get('/api/export/template', (req, res) => {
+  const templateCsv =
+    'Roll Number,Student Name,Father Name,Mobile Number,Semester\r\n' +
+    '01,Gautam Tiwari,Shri Manoj Sharma,8955932061,1st Semester\r\n' +
+    '02,Rahul Sharma,Shri R.P. Sharma,9876543210,1st Semester\r\n' +
+    '03,Aman Verma,Shri Suresh Verma,9812345678,1st Semester\r\n';
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="sgi_cse_section_a_students_template.csv"');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+  return res.send(Buffer.concat([bom, Buffer.from(templateCsv, 'utf8')]));
 });
 
 // -------------------------------------------------------------

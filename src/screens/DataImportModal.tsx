@@ -9,6 +9,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { Student } from '../types';
+import { downloadExcelCSV } from '../utils/csvExport';
 
 interface DataImportModalProps {
   isOpen: boolean;
@@ -45,19 +46,13 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
   const existingRolls = new Set(existingStudents.map((s) => s.rollNumber.trim().toLowerCase()));
 
   const downloadSampleCSV = () => {
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      'Roll Number,Student Name,Father Name,Mobile Number,Semester\n' +
-      '01,Rahul Sharma,Shri R.P. Sharma,9876543210,1st Semester\n' +
-      '02,Aman Verma,Shri Suresh Verma,9812345678,1st Semester\n' +
-      '03,Priya Singh,Shri Mahendra Singh,9898765432,1st Semester\n';
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', 'sgi_cse_section_a_students_template.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const headers = ['Roll Number', 'Student Name', 'Father Name', 'Mobile Number', 'Semester'];
+    const sampleRows = [
+      ['01', 'Gautam Tiwari', 'Shri Manoj Sharma', '8955932061', '1st Semester'],
+      ['02', 'Rahul Sharma', 'Shri R.P. Sharma', '9876543210', '1st Semester'],
+      ['03', 'Aman Verma', 'Shri Suresh Verma', '9812345678', '1st Semester'],
+    ];
+    downloadExcelCSV('sgi_cse_section_a_students_template.csv', headers, sampleRows);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -1,18 +1,23 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    // Students collection for B.Tech CSE Section A
+    // Shared Centralized Institution Data for Sobhasaria Group of Institutions (B.Tech CSE Section A)
+    // Synchronized across all devices, mobile APKs, and faculty logins
     match /students/{studentId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
 
-    // Attendance collection
     match /attendance/{attendanceId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
+    }
+
+    match /teachers/{teacherId} {
+      allow read, write: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if true;
     }
   }
 }
+

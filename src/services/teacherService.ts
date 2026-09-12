@@ -1,4 +1,5 @@
 import { Teacher } from '../types';
+import { apiUrl } from './apiConfig';
 
 export interface CreateTeacherResponse {
   success: boolean;
@@ -10,13 +11,13 @@ export interface CreateTeacherResponse {
 /**
  * Creates a new teacher account via the secure backend API.
  * The server cryptographically validates the caller's Firebase ID token
- * and confirms that the caller is strictly tiwarigautam819@gmail.com.
+ * and confirms that the caller is strictly tiwarigautam819@gmail.com or rk89experiment@gmail.com.
  */
 export async function createTeacherAccountOnServer(
   idToken: string,
   data: { name: string; email: string; password: string }
 ): Promise<CreateTeacherResponse> {
-  const response = await fetch('/api/admin/create-teacher', {
+  const response = await fetch(apiUrl('/api/admin/create-teacher'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -39,7 +40,7 @@ export async function createTeacherAccountOnServer(
  */
 export async function fetchTeachersList(idToken: string): Promise<Teacher[]> {
   try {
-    const response = await fetch('/api/admin/teachers', {
+    const response = await fetch(apiUrl('/api/admin/teachers'), {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${idToken}`,
@@ -60,11 +61,11 @@ export async function fetchTeachersList(idToken: string): Promise<Teacher[]> {
 }
 
 /**
- * Asks the server to verify whether the caller's ID token belongs to the single designated Admin.
+ * Asks the server to verify whether the caller's ID token belongs to an authorized Admin.
  */
 export async function verifyServerAdminStatus(idToken: string): Promise<boolean> {
   try {
-    const response = await fetch('/api/admin/check-admin', {
+    const response = await fetch(apiUrl('/api/admin/check-admin'), {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${idToken}`,
@@ -78,3 +79,4 @@ export async function verifyServerAdminStatus(idToken: string): Promise<boolean>
     return false;
   }
 }
+

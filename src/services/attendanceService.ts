@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, auth, isOfflineError, withTimeout } from './firebase';
 import { AttendanceRecord, AttendanceStatus, DayAttendanceSummary, OperationType } from '../types';
+import { apiUrl } from './apiConfig';
 
 const ATTENDANCE_COLLECTION = 'attendance';
 const LOCAL_DATES_KEY = 'sgi_attendance_dates';
@@ -59,7 +60,7 @@ export async function getAttendanceForDate(dateStr: string): Promise<Record<stri
   let serverRecords: Record<string, AttendanceStatus> = {};
 
   try {
-    const sRes = await fetch(`/api/attendance/${dateStr}`);
+    const sRes = await fetch(apiUrl(`/api/attendance/${dateStr}`));
     if (sRes.ok) {
       serverRecords = await sRes.json();
     }
@@ -74,7 +75,7 @@ export async function getAttendanceForDate(dateStr: string): Promise<Record<stri
         collection(db, ATTENDANCE_COLLECTION),
         where('date', '==', dateStr)
       );
-      const snapshot = await withTimeout(getDocs(q), 2000);
+      const snapshot = await withTimeout(getDocs(q), 6000);
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
         if (data.studentId && data.status) {
@@ -112,7 +113,7 @@ export async function saveAttendanceForDate(
 
   // 2. Persist to server database
   try {
-    fetch('/api/attendance', {
+    fetch(apiUrl('/api/attendance'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date: dateStr, records }),
@@ -121,7 +122,7 @@ export async function saveAttendanceForDate(
     // non-blocking
   }
 
-  // 3. Persist to Firestore with strict timeout
+  // 3. Persist to Firestore with reliable timeout
   if (!db) return;
 
   try {
@@ -145,7 +146,7 @@ export async function saveAttendanceForDate(
       batch.set(docRef, attendanceData, { merge: true });
     }
 
-    await withTimeout(batch.commit(), 2000);
+    await withTimeout(batch.commit(), 6000);
   } catch (error) {
     console.warn('Firestore attendance commit notice (attendance is already safely saved in local & server):', error);
   }
@@ -162,11 +163,8 @@ export async function getAllAttendanceDates(): Promise<string[]> {
   }
 
   try {
-    const q = query(
-      collection(db, ATTENDANCE_COLLECTION),
-      orderBy('date', 'desc')
-    );
-    const snapshot = await withTimeout(getDocs(q), 3000);
+    // Query collection directly so absence of composite index never blocks reading dates
+    const snapshot = await withTimeout(getDocs(collection(db, ATTENDANCE_COLLECTION)), 6000);
     const datesSet = new Set<string>(localDates);
 
     snapshot.forEach((docSnap) => {

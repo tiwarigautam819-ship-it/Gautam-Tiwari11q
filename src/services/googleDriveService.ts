@@ -1,5 +1,6 @@
 import { GoogleAuthProvider, signInWithPopup, User } from 'firebase/auth';
 import { auth } from './firebase';
+import { apiUrl } from './apiConfig';
 
 /**
   * Official Google Drive Scopes configured for Sobhasaria Attendance App
@@ -35,7 +36,7 @@ export function setCachedDriveAccessToken(token: string | null, user: User | nul
   // Seamlessly inform the backend server about the active Drive token
   if (token) {
     try {
-      fetch('/api/drive/token', {
+      fetch(apiUrl('/api/drive/token'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, email: user?.email || 'rk89experiment@gmail.com' }),
@@ -96,7 +97,7 @@ export async function checkDriveConnectionStatus(): Promise<{ connected: boolean
     return { connected: true, adminEmail: inMemoryDriveUser?.email || 'rk89experiment@gmail.com' };
   }
   try {
-    const res = await fetch('/api/drive/status');
+    const res = await fetch(apiUrl('/api/drive/status'));
     if (res.ok) {
       const data = await res.json();
       return { connected: Boolean(data.connected), adminEmail: data.adminEmail || 'rk89experiment@gmail.com' };
@@ -163,7 +164,7 @@ export async function uploadAttendanceToDrive(
 
   // 2. Delegate to server-side drive backup endpoint
   try {
-    const res = await fetch('/api/drive/upload-attendance', {
+    const res = await fetch(apiUrl('/api/drive/upload-attendance'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -173,6 +174,7 @@ export async function uploadAttendanceToDrive(
         token: inMemoryAccessToken || undefined,
       }),
     });
+
 
     if (res.ok) {
       const data = await res.json();

@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, isOfflineError, withTimeout } from './firebase';
 import { Student, OperationType } from '../types';
+import { apiUrl } from './apiConfig';
 
 const STUDENTS_COLLECTION = 'students';
 const LOCAL_STORAGE_STUDENTS_KEY = 'sgi_students_cache';
@@ -127,9 +128,9 @@ export function sortStudents(students: Student[]): Student[] {
 async function fetchStudentsFromServer(): Promise<{ students: Student[]; deletedIds: string[] }> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2500);
+    const timer = setTimeout(() => controller.abort(), 4000);
 
-    const res = await fetch('/api/students', {
+    const res = await fetch(apiUrl('/api/students'), {
       signal: controller.signal,
     }).finally(() => clearTimeout(timer));
 
@@ -151,7 +152,7 @@ async function fetchStudentsFromServer(): Promise<{ students: Student[]; deleted
  */
 async function syncStudentToServer(student: Student): Promise<void> {
   try {
-    fetch('/api/students', {
+    fetch(apiUrl('/api/students'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ student }),
@@ -167,7 +168,7 @@ async function syncStudentToServer(student: Student): Promise<void> {
 async function syncStudentsToServer(students: Student[]): Promise<void> {
   if (students.length === 0) return;
   try {
-    fetch('/api/students', {
+    fetch(apiUrl('/api/students'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ students }),
@@ -206,8 +207,8 @@ export async function getStudents(): Promise<Student[]> {
   const firestorePromise = (async (): Promise<Student[]> => {
     if (!db) return [];
     try {
-      const q = query(collection(db, STUDENTS_COLLECTION), orderBy('rollNumber', 'asc'));
-      const snapshot = await withTimeout(getDocs(q), 3000);
+      // Query collection directly without complex index requirements
+      const snapshot = await withTimeout(getDocs(collection(db, STUDENTS_COLLECTION)), 7000);
       const list: Student[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
@@ -228,7 +229,8 @@ export async function getStudents(): Promise<Student[]> {
         });
       });
       return list;
-    } catch {
+    } catch (err) {
+      console.warn('Notice: Firestore student fetch:', err);
       return [];
     }
   })();
@@ -462,7 +464,7 @@ export async function deleteStudent(id: string): Promise<void> {
 
   // 3. Delete from backend server repository
   try {
-    fetch(`/api/students/${encodeURIComponent(id)}`, {
+    fetch(apiUrl(`/api/students/${encodeURIComponent(id)}`), {
       method: 'DELETE',
     }).catch(() => {});
   } catch {

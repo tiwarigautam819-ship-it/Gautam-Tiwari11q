@@ -8,6 +8,7 @@ import {
   Clock,
   Layers,
   Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 import { Student } from '../types';
 import {
@@ -55,6 +56,7 @@ export const ExportAttendanceModal: React.FC<ExportAttendanceModalProps> = ({
 
   const [exporting, setExporting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (defaultDate) {
@@ -93,23 +95,30 @@ export const ExportAttendanceModal: React.FC<ExportAttendanceModalProps> = ({
 
     setExporting(true);
     setSuccessMessage(null);
+    setDownloadUrl(null);
 
     try {
+      let exportResult: { downloadUrl?: string; success: boolean } | undefined;
+
       if (mode === 'daywise') {
         const attendance = await getAttendanceForDate(selectedDay);
-        exportDayWiseCSV(selectedDay, students, attendance);
-        setSuccessMessage(`Day-wise attendance for ${formatDisplayDate(selectedDay)} downloaded in Excel CSV!`);
+        exportResult = await exportDayWiseCSV(selectedDay, students, attendance);
+        setSuccessMessage(`Day-wise attendance for ${formatDisplayDate(selectedDay)} prepared in Excel CSV!`);
       } else if (mode === 'weekly') {
         const days = getDaysOfWeek(weekMonday);
         const dateStrings = days.map((d) => d.dateStr);
         const attendanceRange = await getAttendanceForDateRange(dateStrings);
-        exportWeeklyCSV(weekMonday, days, students, attendanceRange);
-        setSuccessMessage(`Weekly report (Mon–Sat) starting ${formatDisplayDate(weekMonday)} downloaded in Excel CSV!`);
+        exportResult = await exportWeeklyCSV(weekMonday, days, students, attendanceRange);
+        setSuccessMessage(`Weekly report (Mon–Sat) starting ${formatDisplayDate(weekMonday)} prepared in Excel CSV!`);
       } else if (mode === 'master') {
         const allDates = await getAllAttendanceDates();
         const attendanceRange = await getAttendanceForDateRange(allDates);
-        exportMasterAttendanceCSV(students, allDates, attendanceRange);
-        setSuccessMessage(`Master attendance sheet for all ${allDates.length} recorded dates downloaded in Excel CSV!`);
+        exportResult = await exportMasterAttendanceCSV(students, allDates, attendanceRange);
+        setSuccessMessage(`Master attendance sheet for all ${allDates.length} recorded dates prepared in Excel CSV!`);
+      }
+
+      if (exportResult?.downloadUrl) {
+        setDownloadUrl(exportResult.downloadUrl);
       }
     } catch (err) {
       console.error('Export error:', err);
@@ -164,6 +173,7 @@ export const ExportAttendanceModal: React.FC<ExportAttendanceModalProps> = ({
               onClick={() => {
                 setMode('weekly');
                 setSuccessMessage(null);
+                setDownloadUrl(null);
               }}
               className={`py-2 px-2 text-center rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 mode === 'weekly'
@@ -179,6 +189,7 @@ export const ExportAttendanceModal: React.FC<ExportAttendanceModalProps> = ({
               onClick={() => {
                 setMode('daywise');
                 setSuccessMessage(null);
+                setDownloadUrl(null);
               }}
               className={`py-2 px-2 text-center rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 mode === 'daywise'
@@ -194,6 +205,7 @@ export const ExportAttendanceModal: React.FC<ExportAttendanceModalProps> = ({
               onClick={() => {
                 setMode('master');
                 setSuccessMessage(null);
+                setDownloadUrl(null);
               }}
               className={`py-2 px-2 text-center rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 mode === 'master'
@@ -285,9 +297,26 @@ export const ExportAttendanceModal: React.FC<ExportAttendanceModalProps> = ({
 
         {/* Success Banner */}
         {successMessage && (
-          <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2 text-xs font-medium text-emerald-800 animate-in fade-in">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{successMessage}</span>
+          <div className="mt-4 p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2.5 text-xs text-emerald-900 animate-in fade-in">
+            <div className="flex items-center gap-2 font-semibold">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{successMessage}</span>
+            </div>
+            {downloadUrl && (
+              <div className="pt-2 border-t border-emerald-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <span className="text-[11px] text-emerald-800 font-medium">
+                  File downloaded automatically!
+                </span>
+                <a
+                  href={downloadUrl}
+                  download
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs shadow-xs transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Again</span>
+                </a>
+              </div>
+            )}
           </div>
         )}
 
