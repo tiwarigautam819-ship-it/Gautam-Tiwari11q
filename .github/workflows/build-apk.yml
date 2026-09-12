@@ -39,10 +39,8 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Build Debug APK
-        working-directory: android
-        run: ./gradlew assembleDebug
-
-      - name: Upload APK
+  working-directory: android
+  run: chmod +x gradlew && ./gradlew assembleDebug      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: SGI-Attendance-APK
