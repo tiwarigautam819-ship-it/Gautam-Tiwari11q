@@ -135,6 +135,7 @@ export async function downloadExcelCSV(
     : `${filename}.csv`;
 
   const isMobile = isMobileOrWebView();
+  let localBlobUrl = '';
 
   // 1. ALWAYS trigger client-side instant file download (Works across all browsers and WebViews natively)
   if (typeof document !== 'undefined') {
@@ -142,55 +143,56 @@ export async function downloadExcelCSV(
       const blob = new Blob(['\uFEFF' + csvContent], {
         type: 'text/csv;charset=utf-8;',
       });
-      const url = URL.createObjectURL(blob);
+      localBlobUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
+      link.href = localBlobUrl;
       link.setAttribute('download', cleanFilename);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
+      // On modern mobile devices (Android / iOS / WebView), offer native share sheet if supported
+      if (isMobile && typeof navigator !== 'undefined' && (navigator as any).canShare) {
+        try {
+          const file = new File([blob], cleanFilename, { type: 'text/csv;charset=utf-8' });
+          if ((navigator as any).canShare({ files: [file] })) {
+            (navigator as any).share({
+              files: [file],
+              title: cleanFilename,
+              text: `SGI Attendance Report: ${cleanFilename}`,
+            }).catch(() => {});
+          }
+        } catch {}
+      }
+
       setTimeout(() => {
         try {
-          URL.revokeObjectURL(url);
+          if (localBlobUrl) URL.revokeObjectURL(localBlobUrl);
         } catch {}
-      }, 1000);
+      }, 60000);
     } catch (e) {
       console.warn('Client blob download notice:', e);
     }
   }
 
-  // 2. Prepare a short, safe server-side download link for Android DownloadManager fallback
+  // 2. Show floating mobile download bar with safe local blob URL
+  if (isMobile && localBlobUrl) {
+    showMobileDownloadNotification(localBlobUrl, cleanFilename);
+  }
+
+  // 3. Optional server-side sync if backend is active (non-blocking, will never fail the download)
   try {
-    const res = await fetch(apiUrl('/api/export/prepare'), {
+    fetch(apiUrl('/api/export/prepare'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         filename: cleanFilename,
         content: csvContent,
       }),
-    });
+    }).catch(() => {});
+  } catch {}
 
-    if (res.ok) {
-      const data = await res.json();
-      let downloadUrl = data.downloadUrl;
-
-      // Ensure downloadUrl uses absolute browser URL if relative or invalid
-      if (!downloadUrl || !downloadUrl.startsWith('http')) {
-        downloadUrl = getAbsoluteBrowserUrl(data.relativeUrl || `/api/export/file/${data.id}.csv`);
-      }
-
-      // Only show lightweight non-intrusive floating link if on mobile, do not forcefully open invalid windows
-      if (isMobile) {
-        showMobileDownloadNotification(downloadUrl, cleanFilename);
-      }
-
-      return { success: true, downloadUrl };
-    }
-  } catch (err) {
-    console.warn('Notice: Server-side CSV preparation:', err);
-  }
-
-  return { success: true };
+  return { success: true, downloadUrl: localBlobUrl };
 }
 
 /**
