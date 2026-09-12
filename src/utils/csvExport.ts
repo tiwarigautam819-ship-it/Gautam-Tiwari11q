@@ -1,5 +1,28 @@
 import { Student, AttendanceStatus } from '../types';
-import { apiUrl, getAbsoluteBrowserUrl } from '../services/apiConfig';
+import ExcelJS from 'exceljs';
+import {
+  exportDayWiseExcel,
+  exportWeeklyExcel,
+  exportMasterAttendanceExcel,
+  generateDayWiseWorkbook,
+  generateWeeklyWorkbook,
+  generateMasterWorkbook,
+  generateDayWiseExcelBuffer,
+  saveAndDownloadExcel,
+  showDownloadSuccessToast,
+} from './excelExport';
+
+export {
+  exportDayWiseExcel,
+  exportWeeklyExcel,
+  exportMasterAttendanceExcel,
+  generateDayWiseWorkbook,
+  generateWeeklyWorkbook,
+  generateMasterWorkbook,
+  generateDayWiseExcelBuffer,
+  saveAndDownloadExcel,
+  showDownloadSuccessToast,
+};
 
 /**
  * Checks if running on a mobile device or within an Android APK WebView
@@ -14,189 +37,111 @@ export function isMobileOrWebView(): boolean {
 }
 
 /**
- * Opens a URL in the external mobile browser (e.g. Chrome / Samsung Internet)
- */
-export function openInMobileBrowser(url: string): void {
-  try {
-    if ((window as any).Capacitor?.Plugins?.Browser?.open) {
-      (window as any).Capacitor.Plugins.Browser.open({ url });
-      return;
-    }
-  } catch {}
-
-  try {
-    // _system instructs native Android WebView/Cordova/Capacitor to delegate URL to external native browser
-    const win = window.open(url, '_system');
-    if (!win) {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    }
-  } catch {
-    window.open(url, '_blank', 'noopener,noreferrer');
-  }
-}
-
-/**
- * Displays a lightweight, non-intrusive floating download notification for mobile users.
- * Uses a short direct browser link that guarantees instant download without freezing UI.
- */
-export function showMobileDownloadNotification(downloadUrl: string, filename: string): void {
-  if (typeof document === 'undefined') return;
-
-  const existing = document.getElementById('sgi-mobile-download-toast');
-  if (existing) {
-    existing.remove();
-  }
-
-  const toast = document.createElement('div');
-  toast.id = 'sgi-mobile-download-toast';
-  toast.setAttribute(
-    'style',
-    'position:fixed;bottom:20px;left:16px;right:16px;z-index:99999;max-width:440px;margin:0 auto;'
-  );
-  toast.innerHTML = `
-    <div style="background:#0f172a;color:#ffffff;border-radius:16px;padding:14px 16px;box-shadow:0 12px 30px -4px rgba(0,0,0,0.5);border:1px solid #334155;display:flex;align-items:center;justify-content:space-between;gap:12px;font-family:system-ui,-apple-system,sans-serif;">
-      <div style="min-width:0;flex:1;">
-        <div style="font-size:13px;font-weight:700;color:#38bdf8;display:flex;align-items:center;gap:6px;">
-          <span>📄 CSV Ready</span>
-        </div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-          ${filename}
-        </div>
-      </div>
-      <a 
-        href="${downloadUrl}" 
-        download="${filename}"
-        id="sgi-direct-browser-download-btn"
-        style="background:#059669;color:#ffffff;font-size:12px;font-weight:700;padding:8px 14px;border-radius:10px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;cursor:pointer;flex-shrink:0;"
-      >
-        Download CSV ⬇
-      </a>
-      <button 
-        type="button" 
-        id="sgi-close-download-toast-btn"
-        style="background:transparent;border:none;color:#94a3b8;font-size:18px;line-height:1;cursor:pointer;padding:4px;margin-left:-4px;"
-      >
-        ✕
-      </button>
-    </div>
-  `;
-
-  document.body.appendChild(toast);
-
-  const closeBtn = toast.querySelector('#sgi-close-download-toast-btn');
-  if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      toast.remove();
-    });
-  }
-
-  const downloadBtn = toast.querySelector('#sgi-direct-browser-download-btn');
-  if (downloadBtn) {
-    downloadBtn.addEventListener('click', () => {
-      setTimeout(() => toast.remove(), 2000);
-    });
-  }
-
-  // Auto remove after 14 seconds
-  setTimeout(() => {
-    if (toast && toast.parentNode) {
-      toast.remove();
-    }
-  }, 14000);
-}
-
-/**
- * Downloads data as a Microsoft Excel-compatible .csv file.
- * Adds UTF-8 Byte Order Mark (\uFEFF) and CRLF line breaks so Excel opens
- * special characters, accents, and student names properly without column distortion.
- *
- * For mobile / Android APK users:
- * Prepares a short, compact server link (< 80 chars) to prevent WebView crashes
- * and opens directly in the external browser (Chrome / DownloadManager).
+ * Downloads data as a professional Microsoft Excel (.xlsx) file.
+ * Automatically styles the header row with SGI Royal Blue, auto-fits all column widths
+ * according to content, freezes the header row, and saves directly to the Android Download folder
+ * (on APK) or triggers browser download (on website).
  */
 export async function downloadExcelCSV(
   filename: string,
   headers: string[],
   rows: (string | number)[][]
 ): Promise<{ downloadUrl?: string; success: boolean }> {
-  const escapeCell = (val: string | number | undefined | null): string => {
-    if (val === undefined || val === null) return '""';
-    const str = String(val).replace(/"/g, '""');
-    return `"${str}"`;
-  };
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Sobhasaria Group of Institutions';
+  workbook.lastModifiedBy = 'SGI Attendance System';
+  workbook.created = new Date();
+  workbook.modified = new Date();
 
-  const csvContent = [
-    headers.map(escapeCell).join(','),
-    ...rows.map((row) => row.map(escapeCell).join(',')),
-  ].join('\r\n');
+  const worksheet = workbook.addWorksheet('Attendance Report', {
+    views: [{ state: 'frozen', ySplit: 1, xSplit: 0 }],
+  });
 
-  const cleanFilename = filename.toLowerCase().endsWith('.csv')
-    ? filename
-    : `${filename}.csv`;
+  // 1. Table Headers
+  const headerRow = worksheet.getRow(1);
+  headerRow.height = 26;
+  headers.forEach((h, idx) => {
+    const cell = headerRow.getCell(idx + 1);
+    cell.value = h;
+    cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1E40AF' }, // SGI Navy Blue
+    };
+    cell.alignment = {
+      vertical: 'middle',
+      horizontal: idx === 1 || idx === 2 ? 'left' : 'center',
+    };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      bottom: { style: 'medium', color: { argb: 'FF1E3A8A' } },
+      left: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      right: { style: 'thin', color: { argb: 'FF94A3B8' } },
+    };
+  });
 
-  const isMobile = isMobileOrWebView();
-  let localBlobUrl = '';
+  // 2. Data Rows
+  rows.forEach((rowValues, rIdx) => {
+    const row = worksheet.getRow(rIdx + 2);
+    row.height = 22;
+    rowValues.forEach((val, cIdx) => {
+      const cell = row.getCell(cIdx + 1);
+      cell.value = val;
+      cell.font = {
+        name: 'Calibri',
+        size: 10.5,
+        bold: cIdx === 1,
+        color: { argb: 'FF0F172A' },
+      };
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: cIdx === 1 || cIdx === 2 ? 'left' : 'center',
+      };
 
-  // 1. ALWAYS trigger client-side instant file download (Works across all browsers and WebViews natively)
-  if (typeof document !== 'undefined') {
-    try {
-      const blob = new Blob(['\uFEFF' + csvContent], {
-        type: 'text/csv;charset=utf-8;',
-      });
-      localBlobUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = localBlobUrl;
-      link.setAttribute('download', cleanFilename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      // On modern mobile devices (Android / iOS / WebView), offer native share sheet if supported
-      if (isMobile && typeof navigator !== 'undefined' && (navigator as any).canShare) {
-        try {
-          const file = new File([blob], cleanFilename, { type: 'text/csv;charset=utf-8' });
-          if ((navigator as any).canShare({ files: [file] })) {
-            (navigator as any).share({
-              files: [file],
-              title: cleanFilename,
-              text: `SGI Attendance Report: ${cleanFilename}`,
-            }).catch(() => {});
-          }
-        } catch {}
+      const valStr = String(val);
+      if (valStr.includes('Present') || valStr === 'P') {
+        cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF15803D' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
+      } else if (valStr.includes('Absent') || valStr === 'A') {
+        cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFB91C1C' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
       }
 
-      setTimeout(() => {
-        try {
-          if (localBlobUrl) URL.revokeObjectURL(localBlobUrl);
-        } catch {}
-      }, 60000);
-    } catch (e) {
-      console.warn('Client blob download notice:', e);
-    }
-  }
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+      };
+    });
+  });
 
-  // 2. Show floating mobile download bar with safe local blob URL
-  if (isMobile && localBlobUrl) {
-    showMobileDownloadNotification(localBlobUrl, cleanFilename);
-  }
+  // 3. Auto-fit column widths
+  worksheet.columns.forEach((column) => {
+    let maxLen = 0;
+    column.eachCell?.({ includeEmpty: false }, (cell) => {
+      const val = cell.value;
+      const text = val !== null && val !== undefined ? String(val) : '';
+      if (text.length > maxLen) {
+        maxLen = text.length;
+      }
+    });
+    column.width = Math.min(Math.max(maxLen + 4, 12), 42);
+  });
 
-  // 3. Optional server-side sync if backend is active (non-blocking, will never fail the download)
-  try {
-    fetch(apiUrl('/api/export/prepare'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        filename: cleanFilename,
-        content: csvContent,
-      }),
-    }).catch(() => {});
-  } catch {}
+  const baseName = filename.replace(/\.(csv|xlsx)$/i, '');
+  const xlsxFilename = `${baseName}.xlsx`;
 
-  return { success: true, downloadUrl: localBlobUrl };
+  const saveRes = await saveAndDownloadExcel(workbook, xlsxFilename);
+  return {
+    success: saveRes.success,
+    downloadUrl: saveRes.filePath,
+  };
 }
 
 /**
- * Generates formatted CSV string for Day-Wise Attendance.
+ * Generates formatted CSV string for Day-Wise Attendance (kept for backward compatibility & raw text exports).
  */
 export function generateDayWiseCSVContent(
   dateStr: string,
@@ -241,160 +186,52 @@ export function generateDayWiseCSVContent(
 }
 
 /**
- * Exports Day-Wise Attendance into an Excel-compatible CSV file.
+ * Exports Day-Wise Attendance into a professional Excel (.xlsx) file.
+ * Filename format: Attendance_YYYY-MM-DD.xlsx
+ * Auto-fits columns, freezes headers, formats Present/Absent, and saves to Android Download folder.
  */
-export function exportDayWiseCSV(
+export async function exportDayWiseCSV(
   dateStr: string,
   students: Student[],
   attendance: Record<string, AttendanceStatus>
 ): Promise<{ downloadUrl?: string; success: boolean }> {
-  const headers = [
-    'Roll Number',
-    'Student Name',
-    "Father's Name",
-    'Mobile Number',
-    'Date',
-    'Attendance Status',
-  ];
-
-  const sortedStudents = [...students].sort((a, b) =>
-    a.rollNumber.localeCompare(b.rollNumber, undefined, { numeric: true })
-  );
-
-  const rows = sortedStudents.map((st) => {
-    const status = attendance[st.id] || 'Not Marked';
-    return [
-      st.rollNumber,
-      st.name,
-      st.fatherName || '',
-      st.mobileNumber || '',
-      dateStr,
-      status,
-    ];
-  });
-
-  return downloadExcelCSV(`SGI_Attendance_DayWise_${dateStr}.csv`, headers, rows);
+  const res = await exportDayWiseExcel(dateStr, students, attendance);
+  return {
+    success: res.success,
+    downloadUrl: res.filePath,
+  };
 }
 
 /**
- * Exports Weekly Attendance (Monday to Saturday 6 days) into an Excel-compatible CSV file.
+ * Exports Weekly Attendance (Monday to Saturday 6 days) into a professional Excel (.xlsx) file.
+ * Filename format: Attendance_Weekly_YYYY-MM-DD_to_YYYY-MM-DD.xlsx
+ * Auto-fits columns, freezes headers, formats Present/Absent, and saves to Android Download folder.
  */
-export function exportWeeklyCSV(
+export async function exportWeeklyCSV(
   weekStartDate: string,
   daysOfWeek: Array<{ name: string; display: string; dateStr: string }>,
   students: Student[],
   attendanceMap: Record<string, Record<string, AttendanceStatus>>
 ): Promise<{ downloadUrl?: string; success: boolean }> {
-  const headers = [
-    'Roll Number',
-    'Student Name',
-    "Father's Name",
-    'Mobile Number',
-    ...daysOfWeek.map((d) => `${d.name} (${d.display})`),
-    'Total Present',
-    'Total Days',
-    'Attendance %',
-  ];
-
-  const totalDays = daysOfWeek.length; // 6 days (Mon-Sat)
-  const sortedStudents = [...students].sort((a, b) =>
-    a.rollNumber.localeCompare(b.rollNumber, undefined, { numeric: true })
-  );
-
-  const rows = sortedStudents.map((st) => {
-    let presentCount = 0;
-    const dayCols = daysOfWeek.map((d) => {
-      const dayData = attendanceMap[d.dateStr] || {};
-      const status = dayData[st.id];
-      if (status === 'Present') {
-        presentCount++;
-        return 'Present (P)';
-      }
-      if (status === 'Absent') {
-        return 'Absent (A)';
-      }
-      return 'Not Marked (-)';
-    });
-
-    const pct = totalDays > 0 ? Math.round((presentCount / totalDays) * 1000) / 10 : 0;
-
-    return [
-      st.rollNumber,
-      st.name,
-      st.fatherName || '',
-      st.mobileNumber || '',
-      ...dayCols,
-      presentCount,
-      totalDays,
-      `${pct}%`,
-    ];
-  });
-
-  return downloadExcelCSV(
-    `SGI_Attendance_Weekly_MonToSat_${weekStartDate}.csv`,
-    headers,
-    rows
-  );
+  const res = await exportWeeklyExcel(weekStartDate, daysOfWeek, students, attendanceMap);
+  return {
+    success: res.success,
+    downloadUrl: res.filePath,
+  };
 }
 
 /**
- * Exports Master Student Sheet with overall attendance statistics into Excel-compatible CSV.
+ * Exports Master Student Sheet with overall attendance statistics into professional Excel (.xlsx).
+ * Filename format: Attendance_Master_Report_AllDays.xlsx
  */
-export function exportMasterAttendanceCSV(
+export async function exportMasterAttendanceCSV(
   students: Student[],
   allDates: string[],
   allAttendance: Record<string, Record<string, AttendanceStatus>>
 ): Promise<{ downloadUrl?: string; success: boolean }> {
-  const headers = [
-    'Roll Number',
-    'Student Name',
-    "Father's Name",
-    'Mobile Number',
-    'Total Classes Held',
-    'Classes Attended',
-    'Classes Absent',
-    'Overall Attendance %',
-  ];
-
-  const sortedStudents = [...students].sort((a, b) =>
-    a.rollNumber.localeCompare(b.rollNumber, undefined, { numeric: true })
-  );
-
-  const totalDates = allDates.length;
-
-  const rows = sortedStudents.map((st) => {
-    let attended = 0;
-    let absent = 0;
-
-    allDates.forEach((d) => {
-      const status = allAttendance[d]?.[st.id];
-      if (status === 'Present') attended++;
-      else if (status === 'Absent') absent++;
-    });
-
-    const totalEvaluated = attended + absent;
-    const pct =
-      totalEvaluated > 0
-        ? Math.round((attended / totalEvaluated) * 1000) / 10
-        : totalDates > 0
-        ? Math.round((attended / totalDates) * 1000) / 10
-        : 0;
-
-    return [
-      st.rollNumber,
-      st.name,
-      st.fatherName || '',
-      st.mobileNumber || '',
-      totalDates,
-      attended,
-      absent,
-      `${pct}%`,
-    ];
-  });
-
-  return downloadExcelCSV(
-    `SGI_Attendance_Master_Report_AllDays.csv`,
-    headers,
-    rows
-  );
+  const res = await exportMasterAttendanceExcel(students, allDates, allAttendance);
+  return {
+    success: res.success,
+    downloadUrl: res.filePath,
+  };
 }

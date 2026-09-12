@@ -21,8 +21,9 @@ import {
   saveAttendanceForDate,
   formatDisplayDate,
 } from '../services/attendanceService';
-import { exportDayWiseCSV, generateDayWiseCSVContent } from '../utils/csvExport';
-import { uploadAttendanceToDrive, signInWithGoogleDrive } from '../services/googleDriveService';
+import { exportDayWiseCSV, generateDayWiseCSVContent, generateDayWiseExcelBuffer } from '../utils/csvExport';
+import { uploadAttendanceToDrive, DRIVE_FOLDER_NAME, GOOGLE_DRIVE_TARGET_EMAIL } from '../services/googleDriveService';
+import { saveAttendanceToGmail } from '../services/gmailBackupService';
 
 interface MarkAttendanceScreenProps {
   onBack: () => void;
@@ -44,8 +45,6 @@ export const MarkAttendanceScreen: React.FC<MarkAttendanceScreenProps> = ({
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [pendingDriveData, setPendingDriveData] = useState<{ date: string; csvContent: string; fileName: string } | null>(null);
-  const [authorizingDrive, setAuthorizingDrive] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -118,59 +117,59 @@ export const MarkAttendanceScreen: React.FC<MarkAttendanceScreenProps> = ({
       // 1. Immediately persist attendance across all layers (local, server, Firestore)
       await saveAttendanceForDate(selectedDate, records);
 
-      // 2. Automatically generate and upload attendance CSV to Google Drive in the background
+      // Save confirmation
+      setSuccessMessage(`Attendance for ${formatDisplayDate(selectedDate)} saved safely!`);
+
+      // 2. Automatically upload full attendance Excel report directly to Google Drive
+      // Target: rk89experiment@gmail.com ("Sobhasaria Attendance Records")
+      // Zero authorization required - uses persistent server sync!
       try {
+        const { base64: excelBase64 } = await generateDayWiseExcelBuffer(selectedDate, students, attendance);
         const csvContent = generateDayWiseCSVContent(selectedDate, students, attendance);
-        const fileName = `SGI_Attendance_${selectedDate}_CSE_A.csv`;
-        const driveResult = await uploadAttendanceToDrive(selectedDate, csvContent, fileName);
-        if (driveResult.success) {
-          setPendingDriveData(null);
-          setSuccessMessage(`Attendance for ${formatDisplayDate(selectedDate)} saved & uploaded to Google Drive folder!`);
-        } else if (driveResult.queued) {
-          // Drive token pending one-time authorization
-          setPendingDriveData({ date: selectedDate, csvContent, fileName });
-          setSuccessMessage(`Attendance for ${formatDisplayDate(selectedDate)} saved safely in database!`);
-        } else {
-          setSuccessMessage(`Attendance for ${formatDisplayDate(selectedDate)} saved successfully!`);
-        }
-      } catch (driveErr) {
-        console.warn('Google Drive CSV generation notice:', driveErr);
-        setSuccessMessage(`Attendance for ${formatDisplayDate(selectedDate)} saved successfully!`);
+        const fileName = `Attendance_${selectedDate}.xlsx`;
+
+        // Calculate summary for drive & backup record
+        const total = students.length;
+        const present = students.filter((s) => (attendance[s.id] || 'Present') === 'Present').length;
+        const absent = students.filter((s) => attendance[s.id] === 'Absent').length;
+        const percentage = total > 0 ? Math.round((present / total) * 100) : 0;
+        const studentDetails = students.map((s) => ({
+          rollNumber: s.rollNumber,
+          name: s.name,
+          fatherName: s.fatherName,
+          mobileNumber: s.mobileNumber,
+          status: attendance[s.id] || 'Present',
+        }));
+
+        uploadAttendanceToDrive(selectedDate, csvContent, fileName, excelBase64, {
+          totalStudents: total,
+          presentCount: present,
+          absentCount: absent,
+          percentage,
+          details: studentDetails,
+        })
+          .then((driveRes) => {
+            if (driveRes.success) {
+              setSuccessMessage(
+                `✓ Attendance saved & uploaded to Google Drive ("${DRIVE_FOLDER_NAME}")!`
+              );
+            } else {
+              console.warn('[Google Drive auto-upload notice]:', driveRes.message);
+            }
+          })
+          .catch((driveErr) => {
+            console.warn('[Google Drive auto-upload error]:', driveErr);
+          });
+      } catch (backupErr) {
+        console.warn('Attendance report preparation notice:', backupErr);
       }
 
-      setTimeout(() => setSuccessMessage(null), 8000);
+      setTimeout(() => setSuccessMessage(null), 7000);
     } catch (err: any) {
       console.error('Failed to save attendance:', err);
       setErrorMessage('Could not complete attendance save. Please try again.');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleAuthorizeDrive = async () => {
-    if (!pendingDriveData) return;
-    setAuthorizingDrive(true);
-    try {
-      const authRes = await signInWithGoogleDrive();
-      if (authRes && authRes.accessToken) {
-        const uploadRes = await uploadAttendanceToDrive(
-          pendingDriveData.date,
-          pendingDriveData.csvContent,
-          pendingDriveData.fileName
-        );
-        if (uploadRes.success) {
-          setPendingDriveData(null);
-          setSuccessMessage(`Successfully uploaded to Google Drive ('Sobhasaria Attendance Records' folder)!`);
-        } else {
-          setSuccessMessage(`Drive token authorized! File sync is in progress.`);
-        }
-      }
-    } catch (err: any) {
-      if (err?.code !== 'auth/popup-closed-by-user') {
-        setErrorMessage(`Drive authorization error: ${err?.message || 'Failed to connect'}`);
-      }
-    } finally {
-      setAuthorizingDrive(false);
     }
   };
 
@@ -238,13 +237,14 @@ export const MarkAttendanceScreen: React.FC<MarkAttendanceScreenProps> = ({
         <div className="flex items-center space-x-1.5">
           <button
             type="button"
+            id="mark-export-excel-btn"
             onClick={() => exportDayWiseCSV(selectedDate, students, attendance)}
-            title="Export Day-Wise Attendance to Microsoft Excel CSV"
-            className="py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Export Day-Wise Attendance to Microsoft Excel (.xlsx)"
+            className="py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Export Day CSV</span>
-            <span className="sm:hidden">CSV</span>
+            <span className="hidden sm:inline">Export Excel</span>
+            <span className="sm:hidden">Excel</span>
           </button>
           <button
             onClick={loadData}
@@ -275,44 +275,6 @@ export const MarkAttendanceScreen: React.FC<MarkAttendanceScreenProps> = ({
             <span className="font-semibold">{errorMessage}</span>
           </div>
           <button onClick={() => setErrorMessage(null)} className="text-rose-700 font-bold ml-2 cursor-pointer">✕</button>
-        </div>
-      )}
-
-      {/* Google Drive One-Time Authorization Card (when Drive token is pending) */}
-      {pendingDriveData && (
-        <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-3.5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
-          <div className="flex items-start sm:items-center gap-3">
-            <div className="p-2 rounded-xl bg-amber-100 text-amber-800 shrink-0 mt-0.5 sm:mt-0">
-              <Cloud className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-xs sm:text-sm font-bold text-slate-900">
-                Google Drive One-Time Authorization
-              </p>
-              <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
-                Attendance is safely saved! To upload this sheet to Google Drive (<strong>rk89experiment@gmail.com</strong>), please authorize once.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            id="mark-authorize-drive-btn"
-            onClick={handleAuthorizeDrive}
-            disabled={authorizingDrive}
-            className="w-full sm:w-auto px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white font-semibold text-xs rounded-xl shadow-xs flex items-center justify-center gap-2 cursor-pointer shrink-0 transition-colors"
-          >
-            {authorizingDrive ? (
-              <>
-                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Authorizing...</span>
-              </>
-            ) : (
-              <>
-                <Cloud className="w-3.5 h-3.5" />
-                <span>Authorize & Upload to Drive</span>
-              </>
-            )}
-          </button>
         </div>
       )}
 

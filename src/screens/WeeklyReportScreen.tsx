@@ -16,7 +16,7 @@ import {
   toDateString,
   formatDisplayDate,
 } from '../services/attendanceService';
-import { downloadExcelCSV } from '../utils/csvExport';
+import { exportWeeklyCSV } from '../utils/csvExport';
 
 interface WeeklyReportScreenProps {
   onBack: () => void;
@@ -25,6 +25,7 @@ interface WeeklyReportScreenProps {
 export const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({ onBack }) => {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
+  const [attendanceMatrixState, setAttendanceMatrixState] = useState<Record<string, Record<string, AttendanceStatus>>>({});
   const [weekStartDate, setWeekStartDate] = useState<string>(() => {
     // Default to the Monday of the current week (or reference week)
     const now = new Date();
@@ -66,6 +67,7 @@ export const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({ onBack }
 
       const dateStrings = days.map((d) => d.dateStr);
       const attendanceMatrix = await getAttendanceForDateRange(dateStrings);
+      setAttendanceMatrixState(attendanceMatrix);
 
       const rows: WeeklyReportRow[] = active.map((st) => {
         const statuses: Record<string, AttendanceStatus | 'Unmarked'> = {};
@@ -115,38 +117,9 @@ export const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({ onBack }
     window.print();
   };
 
-  const exportCSV = () => {
+  const exportCSV = async () => {
     if (weeklyData.length === 0) return;
-
-    const headers = [
-      'Roll Number',
-      'Student Name',
-      "Father's Name",
-      'Mobile Number',
-      ...daysOfWeek.map((d) => `${d.name} (${d.display})`),
-      'Total Present',
-      'Total Days',
-      'Attendance %',
-    ];
-    const rows = weeklyData.map((row) => [
-      row.student.rollNumber,
-      row.student.name,
-      row.student.fatherName || '',
-      row.student.mobileNumber || '',
-      ...daysOfWeek.map((d) => {
-        const s = row.dayStatuses[d.dateStr];
-        return s === 'Present' ? 'Present (P)' : s === 'Absent' ? 'Absent (A)' : 'Not Marked (-)';
-      }),
-      row.totalPresent,
-      row.totalDays,
-      `${row.percentage}%`,
-    ]);
-
-    downloadExcelCSV(
-      `SGI_Attendance_SectionA_Week_${weekStartDate}.csv`,
-      headers,
-      rows
-    );
+    await exportWeeklyCSV(weekStartDate, daysOfWeek, students, attendanceMatrixState);
   };
 
   return (
@@ -172,9 +145,10 @@ export const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({ onBack }
         </div>
         <div className="flex items-center space-x-1.5">
           <button
+            id="weekly-export-excel-btn"
             onClick={exportCSV}
-            title="Download CSV"
-            className="p-2 text-slate-600 hover:text-blue-700 rounded-lg hover:bg-slate-100"
+            title="Download Weekly Attendance Excel (.xlsx)"
+            className="p-2 text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 rounded-lg transition-colors cursor-pointer"
           >
             <Download className="w-4 h-4" />
           </button>

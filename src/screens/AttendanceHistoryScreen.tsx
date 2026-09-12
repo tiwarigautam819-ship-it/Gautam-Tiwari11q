@@ -151,13 +151,14 @@ export const AttendanceHistoryScreen: React.FC<AttendanceHistoryScreenProps> = (
         <div className="flex items-center space-x-2">
           <button
             type="button"
+            id="history-export-excel-btn"
             onClick={handleExportSelectedDay}
-            title="Export Selected Date to Excel CSV"
-            className="py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Export Selected Date to Microsoft Excel (.xlsx)"
+            className="py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Export Day CSV</span>
-            <span className="sm:hidden">CSV</span>
+            <span className="hidden sm:inline">Export Excel</span>
+            <span className="sm:hidden">Excel</span>
           </button>
           <button
             onClick={loadHistory}

@@ -103,18 +103,18 @@ export const ExportAttendanceModal: React.FC<ExportAttendanceModalProps> = ({
       if (mode === 'daywise') {
         const attendance = await getAttendanceForDate(selectedDay);
         exportResult = await exportDayWiseCSV(selectedDay, students, attendance);
-        setSuccessMessage(`Day-wise attendance for ${formatDisplayDate(selectedDay)} prepared in Excel CSV!`);
+        setSuccessMessage(`Day-wise attendance for ${formatDisplayDate(selectedDay)} saved in Excel (.xlsx)!`);
       } else if (mode === 'weekly') {
         const days = getDaysOfWeek(weekMonday);
         const dateStrings = days.map((d) => d.dateStr);
         const attendanceRange = await getAttendanceForDateRange(dateStrings);
         exportResult = await exportWeeklyCSV(weekMonday, days, students, attendanceRange);
-        setSuccessMessage(`Weekly report (Mon–Sat) starting ${formatDisplayDate(weekMonday)} prepared in Excel CSV!`);
+        setSuccessMessage(`Weekly report (Mon–Sat) saved in Excel (.xlsx)!`);
       } else if (mode === 'master') {
         const allDates = await getAllAttendanceDates();
         const attendanceRange = await getAttendanceForDateRange(allDates);
         exportResult = await exportMasterAttendanceCSV(students, allDates, attendanceRange);
-        setSuccessMessage(`Master attendance sheet for all ${allDates.length} recorded dates prepared in Excel CSV!`);
+        setSuccessMessage(`Master attendance sheet for all ${allDates.length} recorded dates saved in Excel (.xlsx)!`);
       }
 
       if (exportResult?.downloadUrl) {
@@ -139,10 +139,10 @@ export const ExportAttendanceModal: React.FC<ExportAttendanceModalProps> = ({
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
-                Export Attendance to Excel (.CSV)
+                Export Attendance to Excel (.xlsx)
               </h2>
               <p className="text-xs text-slate-500">
-                Microsoft Excel Compatible • UTF-8 Formatted
+                Auto-Fit Columns • Frozen Headers • Professional Formatting
               </p>
             </div>
           </div>
@@ -158,7 +158,7 @@ export const ExportAttendanceModal: React.FC<ExportAttendanceModalProps> = ({
         <div className="mt-4 p-3 bg-blue-50/70 border border-blue-100 rounded-2xl flex items-start gap-2.5 text-xs text-blue-900">
           <Sparkles className="w-4 h-4 text-blue-700 shrink-0 mt-0.5" />
           <div className="leading-relaxed">
-            <span className="font-bold">Microsoft Excel Ready:</span> Includes full student records (Roll Number, Full Name, Father's Name, Mobile Number) formatted with UTF-8 BOM so Excel opens cleanly without encoding errors.
+            <span className="font-bold">Professional Excel File:</span> Column widths auto-adjust to content so no names are cut off, headers are bold and frozen, and attendance statuses are clearly visible.
           </div>
         </div>
 
@@ -340,12 +340,12 @@ export const ExportAttendanceModal: React.FC<ExportAttendanceModalProps> = ({
             {exporting ? (
               <>
                 <Clock className="w-4 h-4 animate-spin" />
-                <span>Generating Excel CSV...</span>
+                <span>Generating Excel (.xlsx)...</span>
               </>
             ) : (
               <>
                 <Download className="w-4 h-4" />
-                <span>Download Excel CSV</span>
+                <span>Download Excel (.xlsx)</span>
               </>
             )}
           </button>

@@ -1,0 +1,47 @@
+[
+  {
+    "id": "att_1789215593430_hlvw0",
+    "date": "2026-09-12",
+    "timestamp": 1789215593431,
+    "targetEmail": "rk89experiment@gmail.com",
+    "totalStudents": 1,
+    "presentCount": 1,
+    "absentCount": 0,
+    "percentage": 100,
+    "filename": "Attendance_CSE_A_2026-09-12.csv",
+    "hasExcelAttachment": false,
+    "filePath": null,
+    "status": "saved_to_archive",
+    "details": []
+  },
+  {
+    "id": "att_1789215115995_ti6bd",
+    "date": "2026-09-12",
+    "timestamp": 1789215115995,
+    "targetEmail": "rk89experiment@gmail.com",
+    "totalStudents": 2,
+    "presentCount": 0,
+    "absentCount": 2,
+    "percentage": 0,
+    "filename": "Attendance_2026-09-12.xlsx",
+    "hasExcelAttachment": true,
+    "filePath": "2026-09-12_Attendance_2026-09-12.xlsx",
+    "status": "saved_to_archive",
+    "details": [
+      {
+        "rollNumber": "01",
+        "name": "Gautam Tiwari",
+        "fatherName": "Manoj Sharma",
+        "mobileNumber": "8955932061",
+        "status": "Absent"
+      },
+      {
+        "rollNumber": "06",
+        "name": "Akshit Pareek",
+        "fatherName": "Dhiyfgjutrfbj",
+        "mobileNumber": "2222222222",
+        "status": "Absent"
+      }
+    ]
+  }
+]

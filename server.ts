@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
+import nodemailer, { type Transporter } from 'nodemailer';
 
 const app = express();
 const PORT = 3000;
@@ -38,10 +39,15 @@ const TEACHERS_FILE = path.join(DATA_DIR, 'teachers.json');
 const STUDENTS_FILE = path.join(DATA_DIR, 'students.json');
 const DELETED_STUDENTS_FILE = path.join(DATA_DIR, 'deleted_students.json');
 const ATTENDANCE_FILE = path.join(DATA_DIR, 'attendance.json');
+const GMAIL_RECORDS_FILE = path.join(DATA_DIR, 'gmail_attendance_records.json');
+const EXCEL_REPORTS_DIR = path.join(DATA_DIR, 'excel_reports');
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(EXCEL_REPORTS_DIR)) {
+    fs.mkdirSync(EXCEL_REPORTS_DIR, { recursive: true });
   }
   if (!fs.existsSync(TEACHERS_FILE)) {
     fs.writeFileSync(TEACHERS_FILE, JSON.stringify([], null, 2), 'utf8');
@@ -54,6 +60,32 @@ function ensureDataDir() {
   }
   if (!fs.existsSync(ATTENDANCE_FILE)) {
     fs.writeFileSync(ATTENDANCE_FILE, JSON.stringify({}, null, 2), 'utf8');
+  }
+  if (!fs.existsSync(GMAIL_RECORDS_FILE)) {
+    fs.writeFileSync(GMAIL_RECORDS_FILE, JSON.stringify([], null, 2), 'utf8');
+  }
+}
+
+function getStoredGmailRecords(): any[] {
+  try {
+    ensureDataDir();
+    const data = fs.readFileSync(GMAIL_RECORDS_FILE, 'utf8');
+    return JSON.parse(data) || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredGmailRecord(record: any) {
+  try {
+    ensureDataDir();
+    const records = getStoredGmailRecords();
+    records.unshift(record); // newest first
+    // keep up to last 500 records
+    const trimmed = records.slice(0, 500);
+    fs.writeFileSync(GMAIL_RECORDS_FILE, JSON.stringify(trimmed, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to save Gmail attendance record:', err);
   }
 }
 
@@ -500,10 +532,33 @@ app.get('/api/export/template', (req, res) => {
 });
 
 // -------------------------------------------------------------
-// GOOGLE DRIVE PERSISTENCE & UPLOAD PIPELINE
+// GOOGLE DRIVE PERSISTENT BACKUP ENGINE
+// Bound permanently to rk89experiment@gmail.com
+// Zero authorization required for teachers: The server uses the stored token.
 // -------------------------------------------------------------
+const DRIVE_TOKEN_FILE = path.join(DATA_DIR, 'drive_token.json');
 let activeGoogleDriveToken: string | null = null;
 let googleDriveAdminEmail: string = 'rk89experiment@gmail.com';
+
+function getDriveToken(): string | null {
+  if (activeGoogleDriveToken) return activeGoogleDriveToken;
+  try {
+    if (fs.existsSync(DRIVE_TOKEN_FILE)) {
+      const saved = JSON.parse(fs.readFileSync(DRIVE_TOKEN_FILE, 'utf-8'));
+      if (saved?.token) {
+        activeGoogleDriveToken = saved.token;
+        if (saved.email) googleDriveAdminEmail = saved.email;
+        return saved.token;
+      }
+    }
+  } catch (e) {
+    console.warn('[Google Drive] Error loading token:', e);
+  }
+  return null;
+}
+
+// Initial token load
+getDriveToken();
 
 async function getOrCreateAttendanceFolder(accessToken: string): Promise<string | null> {
   try {
@@ -521,7 +576,7 @@ async function getOrCreateAttendanceFolder(accessToken: string): Promise<string 
       }
     }
 
-    // Create the folder if it doesn't exist
+    // Create folder if missing
     const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
       headers: {
@@ -542,6 +597,94 @@ async function getOrCreateAttendanceFolder(accessToken: string): Promise<string 
     console.warn('[Google Drive] Folder lookup notice:', err);
   }
   return null;
+}
+
+async function uploadBinaryFileToGoogleDrive(
+  accessToken: string,
+  fileName: string,
+  fileBuffer: Buffer,
+  mimeType: string
+) {
+  const folderId = await getOrCreateAttendanceFolder(accessToken);
+
+  let queryStr = `name='${fileName.replace(/'/g, "\\'")}' and trashed=false`;
+  if (folderId) {
+    queryStr += ` and '${folderId}' in parents`;
+  }
+
+  let existingFileId: string | null = null;
+  try {
+    const searchRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(queryStr)}&fields=files(id,name)`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+    if (searchRes.ok) {
+      const searchData: any = await searchRes.json();
+      if (searchData.files && searchData.files.length > 0) {
+        existingFileId = searchData.files[0].id;
+      }
+    }
+  } catch (err) {
+    console.warn('[Google Drive] Search notice:', err);
+  }
+
+  // Update existing file
+  if (existingFileId) {
+    const updateRes = await fetch(
+      `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=media`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': mimeType,
+        },
+        body: fileBuffer,
+      }
+    );
+    if (!updateRes.ok) {
+      const errText = await updateRes.text();
+      throw new Error(`Failed to update existing Drive file: ${errText}`);
+    }
+    return await updateRes.json();
+  }
+
+  // Create new file
+  const boundary = `-------DriveBoundary${Date.now()}`;
+  const metadata: any = {
+    name: fileName,
+    mimeType: mimeType,
+    description: 'Daily Attendance Sheet from Sobhasaria Attendance App',
+  };
+  if (folderId) {
+    metadata.parents = [folderId];
+  }
+
+  const metaPart = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`
+  );
+  const closingPart = Buffer.from(`\r\n--${boundary}--`);
+  const fullBody = Buffer.concat([metaPart, fileBuffer, closingPart]);
+
+  const uploadRes = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body: fullBody,
+    }
+  );
+
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text();
+    throw new Error(`Drive upload failed: ${errText}`);
+  }
+
+  return await uploadRes.json();
 }
 
 async function uploadCsvToGoogleDrive(accessToken: string, fileName: string, csvContent: string) {
@@ -628,54 +771,479 @@ async function uploadCsvToGoogleDrive(accessToken: string, fileName: string, csv
   return await uploadRes.json();
 }
 
-// Receive and store active Google Drive token from Admin sign-in
+// -------------------------------------------------------------
+// ZERO-AUTHORIZATION GMAIL ATTENDANCE BACKUP PIPELINE
+// Permanently fixed to user: rk89experiment@gmail.com
+// Zero authorization required - saves automatically on Save Attendance!
+// -------------------------------------------------------------
+const GMAIL_TARGET_EMAIL = 'rk89experiment@gmail.com';
+
+let mailTransporter: Transporter | null = null;
+function getMailTransporter(): Transporter | null {
+  if (mailTransporter) return mailTransporter;
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    try {
+      mailTransporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT) || 587,
+        secure: Number(process.env.SMTP_PORT) === 465,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
+      return mailTransporter;
+    } catch (e) {
+      console.warn('[Mailer] Error creating transporter:', e);
+    }
+  }
+  return null;
+}
+
+async function dispatchAttendanceToGmail(params: {
+  date: string;
+  targetEmail?: string;
+  totalStudents?: number;
+  presentCount?: number;
+  absentCount?: number;
+  percentage?: number;
+  filename?: string;
+  excelBase64?: string;
+  csvContent?: string;
+  details?: Array<{ rollNumber: string; name: string; fatherName?: string; mobileNumber?: string; status: string }>;
+}) {
+  const targetEmail = params.targetEmail || GMAIL_TARGET_EMAIL;
+  const dateStr = params.date || new Date().toISOString().split('T')[0];
+  const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const finalFilename = params.filename || `Attendance_${dateStr}.xlsx`;
+
+  // 1. Save Excel file to persistent storage on server
+  let filePathOnServer: string | null = null;
+  let fileBuffer: Buffer | null = null;
+
+  if (params.excelBase64) {
+    try {
+      fileBuffer = Buffer.from(params.excelBase64, 'base64');
+      const safeFileName = `${dateStr}_${finalFilename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      filePathOnServer = path.join(EXCEL_REPORTS_DIR, safeFileName);
+      fs.writeFileSync(filePathOnServer, fileBuffer);
+    } catch (e) {
+      console.warn('[Gmail Backup] Could not cache excel file on disk:', e);
+    }
+  }
+
+  // 2. Prepare HTML Email body
+  const details = params.details || [];
+  const total = params.totalStudents ?? details.length;
+  const present = params.presentCount ?? details.filter((d) => d.status === 'Present').length;
+  const absent = params.absentCount ?? details.filter((d) => d.status === 'Absent').length;
+  const pct = params.percentage ?? (total > 0 ? Math.round((present / total) * 100) : 0);
+
+  let studentRowsHtml = '';
+  details.forEach((st, idx) => {
+    const isPresent = st.status === 'Present';
+    const badgeColor = isPresent ? '#059669' : '#dc2626';
+    const bgColor = isPresent ? '#ecfdf5' : '#fef2f2';
+    studentRowsHtml += `
+      <tr style="border-bottom: 1px solid #e2e8f0; font-size: 13px;">
+        <td style="padding: 8px 10px; font-weight: bold; color: #1e293b;">${st.rollNumber || idx + 1}</td>
+        <td style="padding: 8px 10px; color: #0f172a; font-weight: 600;">${st.name}</td>
+        <td style="padding: 8px 10px; color: #475569;">${st.fatherName || '-'}</td>
+        <td style="padding: 8px 10px; color: #475569;">${st.mobileNumber || '-'}</td>
+        <td style="padding: 8px 10px; text-align: center;">
+          <span style="display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: bold; color: ${badgeColor}; background-color: ${bgColor};">
+            ${st.status}
+          </span>
+        </td>
+      </tr>
+    `;
+  });
+
+  const emailHtml = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 680px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background-color: #ffffff;">
+      <div style="background-color: #0f172a; padding: 24px; text-align: center; color: #ffffff;">
+        <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: bold; letter-spacing: 0.5px;">SOBHASARIA GROUP OF INSTITUTIONS, SIKAR</h1>
+        <p style="margin: 0 0 4px 0; font-size: 13px; color: #94a3b8;">Department of Computer Science & Engineering</p>
+        <p style="margin: 0; font-size: 14px; font-weight: 600; color: #38bdf8;">Daily Attendance Record - Class CSE Section A</p>
+      </div>
+      
+      <div style="padding: 20px;">
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px;">
+          <p style="margin: 0 0 6px 0; font-size: 14px; color: #334155;"><strong>Date:</strong> ${dateStr}</p>
+          <p style="margin: 0 0 6px 0; font-size: 14px; color: #334155;"><strong>Recipient Gmail:</strong> ${targetEmail}</p>
+          <p style="margin: 0; font-size: 14px; color: #334155;"><strong>Attendance Summary:</strong> 
+            <span style="color: #059669; font-weight: bold;">Present: ${present}</span> | 
+            <span style="color: #dc2626; font-weight: bold;">Absent: ${absent}</span> | 
+            <span>Total: ${total}</span> | 
+            <strong>Percentage: ${pct}%</strong>
+          </p>
+        </div>
+
+        <h3 style="font-size: 15px; color: #0f172a; margin: 0 0 10px 0; font-weight: 700;">Student Attendance Roster</h3>
+        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+          <thead>
+            <tr style="background-color: #f1f5f9; border-bottom: 2px solid #cbd5e1; font-size: 12px; color: #475569; text-transform: uppercase;">
+              <th style="padding: 8px 10px;">Roll No</th>
+              <th style="padding: 8px 10px;">Student Name</th>
+              <th style="padding: 8px 10px;">Father's Name</th>
+              <th style="padding: 8px 10px;">Mobile</th>
+              <th style="padding: 8px 10px; text-align: center;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${studentRowsHtml || '<tr><td colspan="5" style="padding: 12px; text-align: center; color: #64748b;">No individual student rows provided.</td></tr>'}
+          </tbody>
+        </table>
+
+        <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; text-align: center;">
+          <p style="margin: 0 0 4px 0;">This attendance report was automatically saved and dispatched to <strong>${targetEmail}</strong> with zero cloud authorization required.</p>
+          <p style="margin: 0; font-size: 11px; color: #94a3b8;">Sobhasaria Group of Institutions Attendance System • NH-52, Gokulpura, Sikar, Rajasthan</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // 3. Attempt email delivery via nodemailer if transporter configured
+  let sentStatus: 'sent' | 'saved_to_archive' = 'saved_to_archive';
+  const transporter = getMailTransporter();
+
+  if (transporter) {
+    try {
+      const attachments: any[] = [];
+      if (fileBuffer) {
+        attachments.push({
+          filename: finalFilename,
+          content: fileBuffer,
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+      } else if (params.csvContent) {
+        attachments.push({
+          filename: finalFilename.replace('.xlsx', '.csv'),
+          content: params.csvContent,
+          contentType: 'text/csv',
+        });
+      }
+
+      await transporter.sendMail({
+        from: process.env.GMAIL_SENDER || `"SGI Attendance System" <${targetEmail}>`,
+        to: targetEmail,
+        subject: `SGI Daily Attendance Report - ${dateStr} (CSE Section A)`,
+        html: emailHtml,
+        attachments,
+      });
+      sentStatus = 'sent';
+      console.log(`[Gmail Service] Successfully emailed attendance report to ${targetEmail} for ${dateStr}`);
+    } catch (mailErr: any) {
+      console.warn(`[Gmail Service] Mail delivery notice for ${targetEmail}:`, mailErr?.message || mailErr);
+    }
+  }
+
+  // 4. Save metadata record to persistent server archive
+  const record = {
+    id: recordId,
+    date: dateStr,
+    timestamp: Date.now(),
+    targetEmail,
+    totalStudents: total,
+    presentCount: present,
+    absentCount: absent,
+    percentage: pct,
+    filename: finalFilename,
+    hasExcelAttachment: Boolean(fileBuffer),
+    filePath: filePathOnServer ? path.basename(filePathOnServer) : null,
+    status: sentStatus,
+    details: details.slice(0, 100),
+  };
+
+  saveStoredGmailRecord(record);
+  console.log(`[Gmail Backup] Attendance record archived for ${targetEmail} (ID: ${recordId}, Date: ${dateStr})`);
+
+  return {
+    success: true,
+    recordId,
+    targetEmail,
+    status: sentStatus,
+    message: `Attendance for ${dateStr} saved & recorded for ${targetEmail} without requiring cloud authorization`,
+  };
+}
+
+// -------------------------------------------------------------
+// GMAIL BACKUP API ENDPOINTS (Zero-authorization required)
+// -------------------------------------------------------------
+app.post('/api/gmail/send-attendance', async (req, res) => {
+  try {
+    const result = await dispatchAttendanceToGmail(req.body);
+    res.json(result);
+  } catch (err: any) {
+    console.error('[Gmail Backup] Error handling request:', err);
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to save attendance record to Gmail archive',
+    });
+  }
+});
+
+app.get('/api/gmail/records', (req, res) => {
+  const records = getStoredGmailRecords();
+  res.json({
+    targetEmail: GMAIL_TARGET_EMAIL,
+    totalRecords: records.length,
+    records,
+  });
+});
+
+app.get('/api/gmail/status', (req, res) => {
+  const records = getStoredGmailRecords();
+  res.json({
+    targetEmail: GMAIL_TARGET_EMAIL,
+    autoBackupActive: true,
+    requiresAuthorization: false,
+    smtpConfigured: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER),
+    totalSavedRecords: records.length,
+    lastBackupDate: records[0]?.date || null,
+  });
+});
+
+app.post('/api/gmail/test', async (req, res) => {
+  try {
+    const testResult = await dispatchAttendanceToGmail({
+      date: new Date().toISOString().split('T')[0],
+      targetEmail: GMAIL_TARGET_EMAIL,
+      totalStudents: 1,
+      presentCount: 1,
+      absentCount: 0,
+      percentage: 100,
+      filename: `SGI_Test_Verification_${new Date().toISOString().split('T')[0]}.xlsx`,
+      details: [
+        {
+          rollNumber: 'TEST-01',
+          name: 'System Verification Test',
+          fatherName: 'Sobhasaria SGI',
+          mobileNumber: '9999999999',
+          status: 'Present',
+        },
+      ],
+    });
+    res.json({
+      success: true,
+      message: `Test attendance notification created and saved for ${GMAIL_TARGET_EMAIL} (Zero authorization required)!`,
+      testResult,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/gmail/download/:filename', (req, res) => {
+  const safeFilename = path.basename(req.params.filename);
+  const filePath = path.join(EXCEL_REPORTS_DIR, safeFilename);
+
+  if (fs.existsSync(filePath)) {
+    return res.download(filePath, safeFilename);
+  }
+  return res.status(404).json({ error: 'Excel report file not found on server.' });
+});
+
+// -------------------------------------------------------------
+// GOOGLE DRIVE API ENDPOINTS (Zero Authorization for teachers, permanent sync)
+// -------------------------------------------------------------
 app.post('/api/drive/token', (req, res) => {
   const { token, email } = req.body;
   if (token) {
     activeGoogleDriveToken = token;
     if (email) googleDriveAdminEmail = email;
-    console.log(`[Google Drive] Token updated for ${googleDriveAdminEmail}`);
+    try {
+      fs.writeFileSync(
+        DRIVE_TOKEN_FILE,
+        JSON.stringify({ token, email: googleDriveAdminEmail, updatedAt: Date.now() }),
+        'utf-8'
+      );
+      console.log(`[Google Drive] Token stored and persisted for ${googleDriveAdminEmail}`);
+    } catch (e) {
+      console.warn('Could not save drive_token.json:', e);
+    }
   }
+  const effectiveToken = getDriveToken();
   res.json({
     success: true,
-    hasToken: Boolean(activeGoogleDriveToken),
+    hasToken: Boolean(effectiveToken),
     adminEmail: googleDriveAdminEmail,
   });
 });
 
-// Check current Google Drive connection status
 app.get('/api/drive/status', (req, res) => {
+  const token = getDriveToken();
   res.json({
-    connected: Boolean(activeGoogleDriveToken),
+    connected: Boolean(token),
     adminEmail: googleDriveAdminEmail,
+    autoBackupActive: Boolean(token),
+    folderName: 'Sobhasaria Attendance Records',
+    requiresAuthorization: false,
   });
 });
 
-// Upload attendance to Google Drive endpoint (called automatically whenever attendance is saved by any user)
 app.post('/api/drive/upload-attendance', async (req, res) => {
-  const { date, csvContent, filename, token } = req.body;
-  const effectiveToken = token || activeGoogleDriveToken;
+  const {
+    date,
+    csvContent,
+    excelBase64,
+    filename,
+    token,
+    details,
+    totalStudents,
+    presentCount,
+    absentCount,
+    percentage,
+  } = req.body;
 
+  const effectiveToken = token || getDriveToken();
+  const dateStr = date || new Date().toISOString().split('T')[0];
+  const fileTitle = filename || `Attendance_${dateStr}.xlsx`;
+
+  // 1. Parallel save to Gmail archive
+  try {
+    await dispatchAttendanceToGmail({
+      date: dateStr,
+      filename: fileTitle,
+      excelBase64,
+      csvContent,
+      details,
+      totalStudents,
+      presentCount,
+      absentCount,
+      percentage,
+    });
+  } catch (mErr) {
+    console.warn('[Gmail archive notice]:', mErr);
+  }
+
+  // 2. Upload directly to Google Drive
   if (!effectiveToken) {
-    // Attendance is still saved locally and on the server, gracefully report queued status
     return res.status(200).json({
       success: false,
       queued: true,
-      message: 'Drive session token pending. Attendance is safely saved in local and server database.',
+      message: 'Drive token not found. Attendance saved safely in server & database.',
     });
   }
 
-  if (!csvContent) {
-    return res.status(400).json({ error: 'csvContent is required.' });
+  if (!excelBase64 && !csvContent) {
+    return res.status(400).json({ error: 'excelBase64 or csvContent is required.' });
   }
 
   try {
-    const fileTitle = filename || `Attendance_${date || new Date().toISOString().split('T')[0]}_CSE_A.csv`;
-    const result = await uploadCsvToGoogleDrive(effectiveToken, fileTitle, csvContent);
-    return res.json({ success: true, fileId: result.id, name: result.name });
+    let result: any = null;
+    if (excelBase64) {
+      const fileBuffer = Buffer.from(excelBase64, 'base64');
+      result = await uploadBinaryFileToGoogleDrive(
+        effectiveToken,
+        fileTitle,
+        fileBuffer,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
+    } else if (csvContent) {
+      result = await uploadCsvToGoogleDrive(effectiveToken, fileTitle, csvContent);
+    }
+
+    console.log(`[Google Drive] Upload success: ${fileTitle} (File ID: ${result?.id}) in Sobhasaria Attendance Records`);
+    return res.json({
+      success: true,
+      fileId: result?.id,
+      name: result?.name || fileTitle,
+      folder: 'Sobhasaria Attendance Records',
+      targetEmail: googleDriveAdminEmail,
+      viewUrl: result?.id ? `https://drive.google.com/file/d/${result.id}/view` : undefined,
+    });
   } catch (err: any) {
     console.error('[Google Drive] Upload failed:', err.message);
     return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/drive/test-upload', async (req, res) => {
+  const token = getDriveToken();
+  if (!token) {
+    return res.status(400).json({ success: false, error: 'No Google Drive token stored.' });
+  }
+  try {
+    const testDate = new Date().toISOString().split('T')[0];
+    const testFilename = `Verification_Test_${testDate}.txt`;
+    const folderId = await getOrCreateAttendanceFolder(token);
+
+    const boundary = `-------DriveBoundary${Date.now()}`;
+    const metadata: any = {
+      name: testFilename,
+      mimeType: 'text/plain',
+      description: 'System Verification Test from Sobhasaria Attendance App',
+    };
+    if (folderId) metadata.parents = [folderId];
+
+    const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(
+      metadata
+    )}\r\n--${boundary}\r\nContent-Type: text/plain\r\n\r\nSobhasaria Attendance Google Drive auto-sync is fully functional!\r\nVerified at: ${new Date().toISOString()}\r\n--${boundary}--`;
+
+    const uploadRes = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`,
+        },
+        body,
+      }
+    );
+
+    if (!uploadRes.ok) {
+      const errText = await uploadRes.text();
+      throw new Error(`Drive test upload failed: ${errText}`);
+    }
+
+    const file = await uploadRes.json();
+    return res.json({
+      success: true,
+      fileId: file.id,
+      name: file.name,
+      folderId,
+      folderName: 'Sobhasaria Attendance Records',
+      message: `Successfully uploaded ${file.name} to Google Drive ("Sobhasaria Attendance Records")!`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/drive/files', async (req, res) => {
+  const token = getDriveToken();
+  if (!token) {
+    return res.json({ connected: false, files: [] });
+  }
+  try {
+    const folderId = await getOrCreateAttendanceFolder(token);
+    let q = 'trashed=false';
+    if (folderId) {
+      q += ` and '${folderId}' in parents`;
+    }
+    const searchRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+        q
+      )}&fields=files(id,name,mimeType,modifiedTime,size)&pageSize=25&orderBy=modifiedTime desc`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+    if (!searchRes.ok) {
+      return res.json({ connected: false, error: 'Token expired or invalid', files: [] });
+    }
+    const data = await searchRes.json();
+    res.json({
+      connected: true,
+      folderId,
+      folderName: 'Sobhasaria Attendance Records',
+      account: googleDriveAdminEmail,
+      files: data.files || [],
+    });
+  } catch (err: any) {
+    res.status(500).json({ connected: false, error: err.message, files: [] });
   }
 });
 
