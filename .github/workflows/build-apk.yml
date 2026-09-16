@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -26,9 +26,6 @@ jobs:
       - name: Build web app
         run: npm run build
 
-      - name: Sync Capacitor Android
-        run: npx cap sync android
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -38,11 +35,14 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Sync Capacitor
+        run: npx cap sync android
+
       - name: Fix Gradle permission
         working-directory: android
         run: chmod +x gradlew
 
-      - name: Build Debug APK
+      - name: Build APK
         working-directory: android
         run: ./gradlew assembleDebug
 
