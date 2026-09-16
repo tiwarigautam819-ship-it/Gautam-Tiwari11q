@@ -14,11 +14,13 @@ import {
   Download,
 } from 'lucide-react';
 import { Student } from '../types';
+import { useAuth } from '../context/AuthContext';
 import {
   getStudents,
   addStudent,
   updateStudent,
   deleteStudent,
+  clearAllStudents,
   batchImportStudents,
 } from '../services/studentService';
 import { AddEditStudentModal } from './AddEditStudentModal';
@@ -29,6 +31,7 @@ interface StudentManagementScreenProps {
 }
 
 export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = ({ onBack }) => {
+  const { user, canDeleteData } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -41,6 +44,8 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [showClearAllModal, setShowClearAllModal] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -84,9 +89,14 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
 
   const handleDeleteConfirm = async () => {
     if (!studentToDelete) return;
+    if (!canDeleteData) {
+      setError('Permission Denied: Only authorized administrators can delete students.');
+      setStudentToDelete(null);
+      return;
+    }
     setDeleting(true);
     try {
-      await deleteStudent(studentToDelete.id);
+      await deleteStudent(studentToDelete.id, user?.email || undefined);
       setNotification(`Student "${studentToDelete.name}" removed from Section A.`);
       setTimeout(() => setNotification(null), 4000);
       setStudentToDelete(null);
@@ -95,6 +105,26 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
       setError(err.message || 'Failed to delete student.');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleClearAllStudents = async () => {
+    if (!canDeleteData) {
+      setError('Permission Denied: Only authorized administrators can delete students.');
+      setShowClearAllModal(false);
+      return;
+    }
+    setClearingAll(true);
+    try {
+      await clearAllStudents(user?.email || undefined);
+      setNotification('All students removed from Section A successfully.');
+      setTimeout(() => setNotification(null), 4000);
+      await loadData();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete students.');
+    } finally {
+      setClearingAll(false);
+      setShowClearAllModal(false);
     }
   };
 
@@ -163,6 +193,19 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
         </div>
 
         <div className="flex items-center gap-2">
+          {canDeleteData && students.length > 0 && (
+            <button
+              id="clear-all-students-btn"
+              type="button"
+              onClick={() => setShowClearAllModal(true)}
+              className="py-2 px-3 bg-white border border-rose-200 hover:bg-rose-50 text-rose-700 font-semibold text-xs rounded-xl shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Delete all students (Admin Only)"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              <span className="hidden sm:inline">Delete All</span>
+            </button>
+          )}
+
           <button
             id="export-csv-modal-btn"
             type="button"
@@ -294,15 +337,17 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
                   <Edit2 className="w-4 h-4" />
                 </button>
 
-                {/* Delete Button */}
-                <button
-                  id={`delete-student-btn-${student.id}`}
-                  onClick={() => setStudentToDelete(student)}
-                  title="Delete Student"
-                  className="p-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {/* Delete Button (Restricted to Authorized Admins) */}
+                {canDeleteData && (
+                  <button
+                    id={`delete-student-btn-${student.id}`}
+                    onClick={() => setStudentToDelete(student)}
+                    title="Delete Student (Admin Only)"
+                    className="p-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
           ))
@@ -326,7 +371,7 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
       />
 
       {/* Delete Confirmation Modal */}
-      {studentToDelete && (
+      {canDeleteData && studentToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
             <h3 className="text-base font-bold text-slate-900">Delete Student?</h3>
@@ -337,7 +382,7 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
               <button
                 type="button"
                 onClick={() => setStudentToDelete(null)}
-                className="py-2 px-4 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-50"
+                className="py-2 px-4 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
               >
                 Cancel
               </button>
@@ -345,9 +390,53 @@ export const StudentManagementScreen: React.FC<StudentManagementScreenProps> = (
                 type="button"
                 onClick={handleDeleteConfirm}
                 disabled={deleting}
-                className="py-2 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-xs disabled:opacity-50"
+                className="py-2 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-xs disabled:opacity-50 cursor-pointer"
               >
                 {deleting ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear All Students Modal */}
+      {canDeleteData && showClearAllModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
+            <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mb-3">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900">Delete All Students?</h3>
+            <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+              Kya aap Section A ke sabhi <strong>{students.length} students</strong> ko delete karna chahte hain? Yeh Firestore, server aur local database sabhi jagah se remove ho jayenge.
+            </p>
+            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end space-x-2.5">
+              <button
+                type="button"
+                onClick={() => setShowClearAllModal(false)}
+                disabled={clearingAll}
+                className="py-2 px-4 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="confirm-clear-all-students-btn"
+                onClick={handleClearAllStudents}
+                disabled={clearingAll}
+                className="py-2 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold text-xs shadow-xs disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+              >
+                {clearingAll ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting All...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Yes, Delete All</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

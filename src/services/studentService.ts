@@ -451,7 +451,7 @@ export async function updateStudent(id: string, updates: Partial<Student>): Prom
  * Delete a student from Firestore, server repository, and local storage.
  * Only when explicitly deleted here will the student be removed!
  */
-export async function deleteStudent(id: string): Promise<void> {
+export async function deleteStudent(id: string, callerEmail?: string): Promise<void> {
   const localList = getStoredLocalStudents();
   const targetStudent = localList.find((s) => s.id === id);
 
@@ -466,6 +466,7 @@ export async function deleteStudent(id: string): Promise<void> {
   try {
     fetch(apiUrl(`/api/students/${encodeURIComponent(id)}`), {
       method: 'DELETE',
+      headers: callerEmail ? { 'x-admin-email': callerEmail } : {},
     }).catch(() => {});
   } catch {
     // ignore
@@ -547,4 +548,49 @@ export async function batchImportStudents(
   }
 
   return toAdd.length;
+}
+
+/**
+ * Permanently delete ALL students across Local, Server, and Firestore.
+ */
+export async function clearAllStudents(callerEmail?: string): Promise<void> {
+  const localList = getStoredLocalStudents();
+  for (const s of localList) {
+    markStudentDeleted(s.id, s.rollNumber);
+  }
+  saveLocalStudents([]);
+
+  // Server
+  try {
+    await fetch(apiUrl('/api/students-all'), {
+      method: 'DELETE',
+      headers: callerEmail ? { 'x-admin-email': callerEmail } : {},
+    });
+  } catch (err) {
+    console.warn('Server clear students notice:', err);
+  }
+
+  // Firestore
+  if (db) {
+    try {
+      const snapshot = await withTimeout(getDocs(collection(db, STUDENTS_COLLECTION)), 8000);
+      if (!snapshot.empty) {
+        let batch = writeBatch(db);
+        let count = 0;
+        for (const docSnap of snapshot.docs) {
+          batch.delete(docSnap.ref);
+          count++;
+          if (count % 400 === 0) {
+            await withTimeout(batch.commit(), 6000);
+            batch = writeBatch(db);
+          }
+        }
+        if (count % 400 !== 0) {
+          await withTimeout(batch.commit(), 6000);
+        }
+      }
+    } catch (err) {
+      console.warn('Firestore clear students notice:', err);
+    }
+  }
 }

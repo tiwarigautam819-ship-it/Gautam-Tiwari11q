@@ -15,7 +15,7 @@ import { NewTeacherScreen } from './screens/NewTeacherScreen';
 import { toDateString } from './services/attendanceService';
 
 const MainApp: React.FC = () => {
-  const { user, loading, signInDemo } = useAuth();
+  const { user, loading } = useAuth();
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('dashboard');
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     // Current date (2026-09-09)
@@ -30,12 +30,6 @@ const MainApp: React.FC = () => {
         <p className="text-xs font-semibold text-slate-600">
           Connecting to Sobhasaria Attendance System...
         </p>
-        <button
-          onClick={() => signInDemo('admin')}
-          className="mt-6 text-xs text-blue-700 underline font-semibold hover:text-blue-900 cursor-pointer"
-        >
-          Taking longer than expected? Click here to continue
-        </button>
       </div>
     );
   }

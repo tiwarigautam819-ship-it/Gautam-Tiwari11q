@@ -1,33 +1,61 @@
 import React, { useState } from 'react';
-import { Lock, Eye, EyeOff, AlertCircle, ArrowRight, Mail } from 'lucide-react';
+import { Lock, Eye, EyeOff, AlertCircle, ArrowRight, Mail, CheckCircle2, KeyRound } from 'lucide-react';
 import { CollegeEmblem } from '../components/CollegeEmblem';
 import { CampusSilhouette } from '../components/CampusSilhouette';
 import { useAuth } from '../context/AuthContext';
 
-export const LoginScreen: React.FC = () => {
-  const { signInWithEmail, authError, clearAuthError, isConfigured } = useAuth();
+type LoginView = 'signin' | 'forgot';
 
+export const LoginScreen: React.FC = () => {
+  const { signInWithEmail, resetPassword, authError, clearAuthError, isConfigured } = useAuth();
+
+  const [view, setView] = useState<LoginView>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [resetSuccessMessage, setResetSuccessMessage] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearAuthError();
     setLocalError(null);
+    setResetSuccessMessage(null);
 
-    if (!email.trim() || !password) {
-      setLocalError('Please enter both email and password.');
+    const cleanEmail = email.trim();
+
+    if (view === 'forgot') {
+      if (!cleanEmail) {
+        setLocalError('Please enter your email address.');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        await resetPassword(cleanEmail);
+        setResetSuccessMessage(`Password reset link sent to ${cleanEmail}. Please check your inbox and spam folder.`);
+      } catch {
+        // Error state handled in AuthContext
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    if (!cleanEmail) {
+      setLocalError('Please enter your email address.');
+      return;
+    }
+    if (!password) {
+      setLocalError('Please enter your password.');
       return;
     }
 
     setSubmitting(true);
     try {
-      await signInWithEmail(email, password);
+      await signInWithEmail(cleanEmail, password);
     } catch {
-      // Handled in AuthContext
+      // Error state handled in AuthContext
     } finally {
       setSubmitting(false);
     }
@@ -69,16 +97,18 @@ export const LoginScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Login Card */}
-      <div className="relative z-10 w-full max-w-[380px] my-6">
+      {/* Main Login Card - Email and Password Only */}
+      <div className="relative z-10 w-full max-w-[400px] my-6">
         <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-7 border border-white/20 backdrop-blur-xs">
           {/* Card Title */}
           <div className="text-center mb-5">
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
-              Teacher / Admin Login
+              {view === 'signin' ? 'Faculty & Admin Sign In' : 'Reset Your Password'}
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Section A Attendance Management System
+              {view === 'signin'
+                ? 'Sign in with your Email and Password'
+                : 'Enter your registered email to receive a recovery link'}
             </p>
           </div>
 
@@ -89,8 +119,21 @@ export const LoginScreen: React.FC = () => {
               <div className="space-y-1">
                 <p className="font-semibold text-amber-950">Firebase Setup Required</p>
                 <p className="text-amber-800 leading-relaxed text-[11px]">
-                  Please ensure Firebase credentials are configured to enable cloud synchronization.
+                  Please ensure Firebase configuration is connected to enable cloud authentication.
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* Reset Password Success Banner */}
+          {resetSuccessMessage && (
+            <div
+              id="login-success-banner"
+              className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2 text-xs text-emerald-800 animate-in fade-in"
+            >
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+              <div className="flex-1 text-[11px] leading-relaxed">
+                <p className="font-semibold">{resetSuccessMessage}</p>
               </div>
             </div>
           )}
@@ -108,12 +151,12 @@ export const LoginScreen: React.FC = () => {
             </div>
           )}
 
-          {/* Form */}
+          {/* Email & Password Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Email Field */}
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Email
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Email Address
               </label>
               <div className="relative rounded-xl shadow-2xs">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
@@ -124,7 +167,7 @@ export const LoginScreen: React.FC = () => {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="teacher@sobhasaria.edu.in"
+                  placeholder="name@sobhasaria.edu.in"
                   autoComplete="email"
                   required
                   className="block w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all"
@@ -132,36 +175,54 @@ export const LoginScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Password Field */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Password
-              </label>
-              <div className="relative rounded-xl shadow-2xs">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <Lock className="w-4 h-4" />
+            {/* Password Field (Only in Sign In mode) */}
+            {view === 'signin' && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    id="forgot-password-toggle-btn"
+                    onClick={() => {
+                      setView('forgot');
+                      clearAuthError();
+                      setLocalError(null);
+                      setResetSuccessMessage(null);
+                    }}
+                    className="text-[11px] font-semibold text-blue-700 hover:underline cursor-pointer"
+                  >
+                    Forgot password?
+                  </button>
                 </div>
-                <input
-                  id="login-password-input"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  required
-                  className="block w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all"
-                />
-                <button
-                  type="button"
-                  id="login-toggle-password-btn"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-hidden cursor-pointer"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+                <div className="relative rounded-xl shadow-2xs">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <input
+                    id="login-password-input"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    required
+                    minLength={6}
+                    className="block w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all"
+                  />
+                  <button
+                    type="button"
+                    id="login-toggle-password-btn"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-hidden cursor-pointer"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Submit Button */}
             <button
@@ -172,19 +233,41 @@ export const LoginScreen: React.FC = () => {
             >
               {submitting ? (
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : view === 'signin' ? (
+                <>
+                  <span>Sign In</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
               ) : (
                 <>
-                  <span>Login</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <KeyRound className="w-4 h-4" />
+                  <span>Send Password Reset Link</span>
                 </>
               )}
             </button>
+
+            {/* Back to Sign In button (in forgot mode) */}
+            {view === 'forgot' && (
+              <button
+                type="button"
+                id="back-to-signin-btn"
+                onClick={() => {
+                  setView('signin');
+                  clearAuthError();
+                  setLocalError(null);
+                  setResetSuccessMessage(null);
+                }}
+                className="w-full py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 text-center cursor-pointer"
+              >
+                ← Back to Sign In
+              </button>
+            )}
           </form>
 
-          {/* Secure Administrative Notice */}
+          {/* Secure System Notice */}
           <div className="mt-5 pt-3 border-t border-slate-100 text-center">
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              Teacher accounts are managed and provisioned by the Institution Administrator.
+            <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+              Secured with <strong className="text-slate-700">Firebase Authentication</strong>.
             </p>
           </div>
         </div>
@@ -197,4 +280,5 @@ export const LoginScreen: React.FC = () => {
     </div>
   );
 };
+
 

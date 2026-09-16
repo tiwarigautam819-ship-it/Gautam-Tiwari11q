@@ -23,10 +23,15 @@ import {
   Cloud,
   FolderOpen,
   RefreshCw,
+  Trash2,
+  AlertTriangle,
+  Database,
 } from 'lucide-react';
 import { CollegeEmblem } from '../components/CollegeEmblem';
 import { useAuth } from '../context/AuthContext';
 import { ScreenType } from '../types';
+import { clearAllAttendance } from '../services/attendanceService';
+import { clearAllStudents } from '../services/studentService';
 import {
   GMAIL_TARGET_EMAIL,
   getGmailBackupRecords,
@@ -50,7 +55,7 @@ interface SettingsScreenProps {
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNavigate }) => {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, canDeleteData } = useAuth();
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [modalMessage, setModalMessage] = useState<string | null>(null);
   const [gmailRecords, setGmailRecords] = useState<GmailAttendanceRecord[]>([]);
@@ -64,6 +69,41 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
   const [driveLoading, setDriveLoading] = useState<boolean>(false);
   const [driveNotice, setDriveNotice] = useState<string | null>(null);
   const [driveConnected, setDriveConnected] = useState<boolean>(true);
+
+  // Data Deletion State
+  const [deleteActionType, setDeleteActionType] = useState<'attendance' | 'students' | 'factory_reset' | null>(null);
+  const [deleteProcessing, setDeleteProcessing] = useState(false);
+  const [dataDeleteNotice, setDataDeleteNotice] = useState<string | null>(null);
+
+  const handleConfirmDataDelete = async () => {
+    if (!deleteActionType) return;
+    if (!canDeleteData) {
+      setDataDeleteNotice('Permission Denied: Only authorized administrators are authorized to delete data.');
+      setDeleteActionType(null);
+      return;
+    }
+    setDeleteProcessing(true);
+    try {
+      if (deleteActionType === 'attendance') {
+        const res = await clearAllAttendance(user?.email || undefined);
+        setDataDeleteNotice(res.message || 'All attendance history deleted successfully.');
+      } else if (deleteActionType === 'students') {
+        await clearAllStudents(user?.email || undefined);
+        setDataDeleteNotice('All students deleted successfully across local, server, and cloud.');
+      } else if (deleteActionType === 'factory_reset') {
+        await clearAllAttendance(user?.email || undefined);
+        await clearAllStudents(user?.email || undefined);
+        setDataDeleteNotice('Complete application reset successful! All students and attendance cleared.');
+      }
+      setTimeout(() => setDataDeleteNotice(null), 5000);
+    } catch (err: any) {
+      console.error('Data deletion failed:', err);
+      setDataDeleteNotice('Notice: Data deletion completed with partial sync.');
+    } finally {
+      setDeleteProcessing(false);
+      setDeleteActionType(null);
+    }
+  };
 
   useEffect(() => {
     getGmailBackupRecords().then((records) => {
@@ -152,6 +192,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
         </button>
         <h1 className="text-lg sm:text-xl font-bold text-slate-900">Settings</h1>
       </div>
+
+      {/* Data Delete Notification Banner */}
+      {dataDeleteNotice && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs font-semibold text-emerald-900 shadow-2xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{dataDeleteNotice}</span>
+          </div>
+          <button
+            onClick={() => setDataDeleteNotice(null)}
+            className="text-emerald-700 font-bold ml-2 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* College Profile Card Matching Screenshot 8 */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs flex items-center space-x-4">
@@ -480,6 +536,93 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
           </div>
         )}
 
+        {/* Data Management & Deletion Options (Strictly restricted to tiwarigautam819@gmail.com and rk89experiment@gmail.com) */}
+        {canDeleteData && (
+          <div className="w-full p-4 border-b border-slate-100 bg-rose-50/20">
+            <div className="flex items-center space-x-3.5 mb-3">
+              <div className="p-2 rounded-xl bg-rose-100 text-rose-700">
+                <Database className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs sm:text-sm font-bold text-slate-900">
+                  Data Management & Deletion
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  डेटा हटाएं — Delete attendance, remove students, or factory reset (Admin Only)
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 pl-0 sm:pl-12">
+              {/* Clear All Attendance */}
+              <div className="p-3 bg-white border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+                <div>
+                  <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <span>Clear All Attendance Records</span>
+                    <span className="text-[10px] text-rose-600 font-semibold bg-rose-50 px-1.5 py-0.5 rounded">उपस्थिति रिकॉर्ड</span>
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Permanently clears all attendance dates across Firestore, server, and local storage. Students remain untouched.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  id="settings-delete-all-attendance-btn"
+                  onClick={() => setDeleteActionType('attendance')}
+                  className="py-1.5 px-3 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center justify-center gap-1 transition-colors self-start sm:self-center shrink-0 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Delete Attendance</span>
+                </button>
+              </div>
+
+              {/* Clear All Students */}
+              <div className="p-3 bg-white border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+                <div>
+                  <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <span>Delete All Students</span>
+                    <span className="text-[10px] text-rose-600 font-semibold bg-rose-50 px-1.5 py-0.5 rounded">छात्र डेटा</span>
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Permanently deletes all registered students from Section A across cloud, server, and local storage.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  id="settings-delete-all-students-btn"
+                  onClick={() => setDeleteActionType('students')}
+                  className="py-1.5 px-3 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center justify-center gap-1 transition-colors self-start sm:self-center shrink-0 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Delete Students</span>
+                </button>
+              </div>
+
+              {/* Factory Reset */}
+              <div className="p-3 bg-white border border-rose-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+                <div>
+                  <p className="text-xs font-bold text-rose-800 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Full Application Reset (Factory Reset)</span>
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Completely wipes both attendance history AND student list, restoring the app to clean zero-state.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  id="settings-factory-reset-btn"
+                  onClick={() => setDeleteActionType('factory_reset')}
+                  className="py-1.5 px-3.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center justify-center gap-1 transition-colors self-start sm:self-center shrink-0 shadow-xs cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Full Reset</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Logout Matching Screenshot 8 */}
         <button
           id="settings-logout-btn"
@@ -725,6 +868,66 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onNaviga
                 className="py-1.5 px-4 rounded-xl bg-slate-900 text-white font-semibold text-xs shadow-xs cursor-pointer hover:bg-slate-800"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal: Data Deletion */}
+      {deleteActionType && canDeleteData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border border-slate-200 p-5 space-y-4">
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-base font-bold text-slate-900">
+                {deleteActionType === 'attendance' && 'Clear All Attendance Records?'}
+                {deleteActionType === 'students' && 'Delete All Students?'}
+                {deleteActionType === 'factory_reset' && 'Confirm Full System Reset?'}
+              </h3>
+              <p className="text-xs font-bold text-rose-600 uppercase tracking-wider">
+                Permanent Action • অপরিবর্তনীয় / वापस नहीं होगा
+              </p>
+              <p className="text-xs text-slate-600 leading-relaxed pt-1">
+                {deleteActionType === 'attendance' &&
+                  'Kya aap sabhi dates ke attendance records ko delete karna chahte hain? Yeh Firestore, server aur local database se permanently remove ho jayenge. Aapke students surakshit rahenge.'}
+                {deleteActionType === 'students' &&
+                  'Kya aap Section A ke sabhi students ko delete karna chahte hain? Yeh students list Firestore, server aur local database se permanently remove ho jayegi.'}
+                {deleteActionType === 'factory_reset' &&
+                  'Kya aap poora data (sabhi students aur sabhi attendance records) delete karna chahte hain? System ekdam fresh ho jayega aur aapko naye students add karne honge.'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteActionType(null)}
+                disabled={deleteProcessing}
+                className="py-2.5 px-4 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="settings-confirm-delete-btn"
+                onClick={handleConfirmDataDelete}
+                disabled={deleteProcessing}
+                className="py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                {deleteProcessing ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting Data...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Yes, Permanently Delete</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

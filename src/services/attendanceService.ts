@@ -308,3 +308,104 @@ export function toDateString(d: Date): string {
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+/**
+ * Permanently delete attendance records for a specific date across Local, Server, and Firestore.
+ */
+export async function deleteAttendanceForDate(
+  dateStr: string,
+  callerEmail?: string
+): Promise<{ success: boolean; message: string }> {
+  // 1. Delete from localStorage
+  try {
+    localStorage.removeItem(`sgi_attendance_${dateStr}`);
+    const dates = getLocalDates().filter((d) => d !== dateStr);
+    localStorage.setItem(LOCAL_DATES_KEY, JSON.stringify(dates));
+  } catch {
+    // ignore
+  }
+
+  // 2. Delete from Server
+  try {
+    await fetch(apiUrl(`/api/attendance/${encodeURIComponent(dateStr)}`), {
+      method: 'DELETE',
+      headers: callerEmail ? { 'x-admin-email': callerEmail } : {},
+    });
+  } catch (err) {
+    console.warn('Server attendance delete notice:', err);
+  }
+
+  // 3. Delete from Firestore
+  if (db) {
+    try {
+      const q = query(
+        collection(db, ATTENDANCE_COLLECTION),
+        where('date', '==', dateStr)
+      );
+      const snapshot = await withTimeout(getDocs(q), 6000);
+      if (!snapshot.empty) {
+        const batch = writeBatch(db);
+        snapshot.forEach((docSnap) => {
+          batch.delete(docSnap.ref);
+        });
+        await withTimeout(batch.commit(), 6000);
+      }
+    } catch (err) {
+      console.warn('Firestore attendance delete notice:', err);
+    }
+  }
+
+  return { success: true, message: `Attendance records for ${formatDisplayDate(dateStr)} deleted successfully.` };
+}
+
+/**
+ * Permanently clear ALL attendance records across Local, Server, and Firestore.
+ */
+export async function clearAllAttendance(callerEmail?: string): Promise<{ success: boolean; message: string }> {
+  // 1. Delete from localStorage
+  try {
+    const dates = getLocalDates();
+    for (const d of dates) {
+      localStorage.removeItem(`sgi_attendance_${d}`);
+    }
+    localStorage.removeItem(LOCAL_DATES_KEY);
+  } catch {
+    // ignore
+  }
+
+  // 2. Delete from Server
+  try {
+    await fetch(apiUrl('/api/attendance'), {
+      method: 'DELETE',
+      headers: callerEmail ? { 'x-admin-email': callerEmail } : {},
+    });
+  } catch (err) {
+    console.warn('Server clear all attendance notice:', err);
+  }
+
+  // 3. Delete from Firestore
+  if (db) {
+    try {
+      const snapshot = await withTimeout(getDocs(collection(db, ATTENDANCE_COLLECTION)), 8000);
+      if (!snapshot.empty) {
+        let batch = writeBatch(db);
+        let count = 0;
+        for (const docSnap of snapshot.docs) {
+          batch.delete(docSnap.ref);
+          count++;
+          if (count % 400 === 0) {
+            await withTimeout(batch.commit(), 6000);
+            batch = writeBatch(db);
+          }
+        }
+        if (count % 400 !== 0) {
+          await withTimeout(batch.commit(), 6000);
+        }
+      }
+    } catch (err) {
+      console.warn('Firestore clear all attendance notice:', err);
+    }
+  }
+
+  return { success: true, message: 'All attendance records have been cleared successfully.' };
+}

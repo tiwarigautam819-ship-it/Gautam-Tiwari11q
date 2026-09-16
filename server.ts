@@ -348,8 +348,23 @@ app.post('/api/students', (req, res) => {
   res.json({ success: true, count: existingList.length, students: existingList });
 });
 
+// Helper to verify delete permission (tiwarigautam819@gmail.com and rk89experiment@gmail.com)
+function isDeleteAuthorized(req: express.Request): boolean {
+  const emailHeader = ((req.headers['x-admin-email'] as string) || '').toLowerCase().trim();
+  if (emailHeader && ADMIN_EMAILS.some((adm) => adm.toLowerCase() === emailHeader)) {
+    return true;
+  }
+  return false;
+}
+
 // Delete a student permanently
 app.delete('/api/students/:id', (req, res) => {
+  if (!isDeleteAuthorized(req)) {
+    return res.status(403).json({
+      error: 'Permission denied. Deletion is restricted to authorized administrators.',
+    });
+  }
+
   const { id } = req.params;
   if (!id) {
     return res.status(400).json({ error: 'Student ID is required.' });
@@ -361,6 +376,24 @@ app.delete('/api/students/:id', (req, res) => {
   recordDeletedStudentId(id);
 
   res.json({ success: true, message: 'Student deleted successfully.' });
+});
+
+// Clear all students permanently
+app.delete('/api/students-all', (req, res) => {
+  if (!isDeleteAuthorized(req)) {
+    return res.status(403).json({
+      error: 'Permission denied. Deletion is restricted to authorized administrators.',
+    });
+  }
+
+  const existingList = getStoredStudents();
+  for (const s of existingList) {
+    if (s && s.id) {
+      recordDeletedStudentId(s.id);
+    }
+  }
+  saveStoredStudents([]);
+  res.json({ success: true, message: 'All students cleared successfully.' });
 });
 
 // -------------------------------------------------------------
@@ -403,6 +436,47 @@ app.post('/api/attendance', (req, res) => {
     success: true,
     date,
     count: Object.keys(currentForDate).length,
+  });
+});
+
+// Delete attendance records for a specific date (YYYY-MM-DD)
+app.delete('/api/attendance/:date', (req, res) => {
+  if (!isDeleteAuthorized(req)) {
+    return res.status(403).json({
+      error: 'Permission denied. Deletion is restricted to authorized administrators.',
+    });
+  }
+
+  const { date } = req.params;
+  if (!date) {
+    return res.status(400).json({ error: 'Date is required.' });
+  }
+
+  const allAttendance = getStoredAttendance();
+  if (allAttendance[date]) {
+    delete allAttendance[date];
+    saveStoredAttendance(allAttendance);
+  }
+
+  res.json({
+    success: true,
+    message: `Attendance records for ${date} deleted successfully.`,
+    date,
+  });
+});
+
+// Clear all attendance records
+app.delete('/api/attendance', (req, res) => {
+  if (!isDeleteAuthorized(req)) {
+    return res.status(403).json({
+      error: 'Permission denied. Deletion is restricted to authorized administrators.',
+    });
+  }
+
+  saveStoredAttendance({});
+  res.json({
+    success: true,
+    message: 'All attendance records cleared successfully.',
   });
 });
 
